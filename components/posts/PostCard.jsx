@@ -1,0 +1,573 @@
+import React, { useEffect, useState } from "react";
+import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, Alert, useWindowDimensions } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import YoutubePlayer from "react-native-youtube-iframe";
+import { useNavigation } from "@react-navigation/native";
+import { VideoView, useVideoPlayer } from "expo-video";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { useTheme } from "../../styles/ThemeContext";
+import { useAuth } from "../../auth/AuthContext";
+import { getCommentCount, sendModerationNotice, flagPost, recordPostDeletion } from "../../supabase/helpers";
+import { showToast } from "../../utils/toast";
+import supabase from "../../supabase/client";
+import VoteButtons from "./VoteButtons";
+import CommentsSection from "./CommentsSection";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import utc from "dayjs/plugin/utc";
+import MentionsText from "../common/MentionsText";
+import { hasYoutubeLink, extractYoutubeId } from "../../utils/linkifyText";
+import AdminActionMenu from "./AdminActionMenu";
+import ReasonModal from "../common/ReasonModal";
+import FlagPostModal from "./FlagPostModal";
+dayjs.extend(relativeTime);
+dayjs.extend(utc);
+
+const isVideoUrl = (u) => {
+  if (!u) return false;
+  const lower = String(u).toLowerCase();
+  const base = lower.split(/[?#]/)[0];
+  if (base.includes("/video/upload")) return true; // cloudinary hint
+  return base.endsWith(".mp4") || base.endsWith(".mov") || base.endsWith(".m4v") || base.endsWith(".webm");
+};
+
+const isYouTubeUrl = (u) => {
+  if (!u) return false;
+  const s = String(u).toLowerCase();
+  return s.includes("youtube.com/watch") || s.includes("youtu.be/") || s.includes("youtube.com/embed/");
+};
+
+const getYouTubeId = (url) => {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    // https://www.youtube.com/watch?v=VIDEOID
+    if (u.hostname.includes("youtube.com")) {
+      if (u.pathname.startsWith("/watch")) return u.searchParams.get("v");
+      if (u.pathname.startsWith("/embed/")) return u.pathname.split("/embed/")[1]?.split("/")[0];
+      // shorts: /shorts/VIDEOID
+      if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/shorts/")[1]?.split("/")[0];
+    }
+    // https://youtu.be/VIDEOID
+    if (u.hostname.includes("youtu.be")) {
+      return u.pathname.replace(/^\//, "").split("/")[0];
+    }
+  } catch {}
+  return null;
+};
+
+const TF_ORIENTATION_PARAM = 'tf_orientation';
+
+
+
+const parseOrientationFromUrl = (url) => {
+
+  if (!url) return null;
+
+  try {
+
+    const parsed = new URL(url);
+
+    const raw = parsed.searchParams.get(TF_ORIENTATION_PARAM);
+
+    if (raw == null) return null;
+
+    const numeric = Number(raw);
+
+    return Number.isNaN(numeric) ? null : numeric;
+
+  } catch {
+
+    return null;
+
+  }
+
+};
+
+
+
+const stripOrientationParam = (url) => {
+
+  if (!url) return url;
+
+  try {
+
+    const parsed = new URL(url);
+
+    parsed.searchParams.delete(TF_ORIENTATION_PARAM);
+
+    return parsed.toString();
+
+  } catch {
+
+    return url;
+
+  }
+
+};
+
+
+
+const rotationForOrientation = (orientation) => {
+  switch (orientation) {
+    case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
+      return '90deg';
+    case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
+      return '-90deg';
+    case ScreenOrientation.Orientation.PORTRAIT_DOWN:
+      return '180deg';
+    default:
+      return '0deg';
+  }
+};
+
+const aspectForOrientation = (orientation, fallback = 16 / 9) => {
+
+  if (orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
+
+      orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN) {
+
+    return 9 / 16;
+
+  }
+
+  if (orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+
+      orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT) {
+
+    return 16 / 9;
+
+  }
+
+  return fallback;
+
+};
+
+
+
+function VideoItem({ url, ratio }) {
+  const orientation = parseOrientationFromUrl(url);
+  const playbackUrl = orientation !== null ? stripOrientationParam(url) : url;
+  const player = useVideoPlayer({ uri: playbackUrl }, (p) => { p.loop = false; });
+  const containerAspect = aspectForOrientation(orientation, ratio || 16 / 9);
+  const videoStyle = { width: "100%", height: "100%" };
+  const rotate = rotationForOrientation(orientation);
+  if (rotate !== '0deg') {
+    videoStyle.transform = [{ rotate }];
+  }
+  return (
+    <View style={{ marginRight: 8, flex: 1 }}>
+      <View
+        style={{
+          width: "100%",
+          aspectRatio: containerAspect,
+          borderRadius: 8,
+          overflow: "hidden",
+          backgroundColor: "#000",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <VideoView player={player} style={videoStyle} nativeControls />
+      </View>
+    </View>
+  );
+}
+
+function YouTubeItem({ videoId, ratio = 16 / 9, autoplay }) {
+  const { width } = useWindowDimensions();
+  if (!videoId) return null;
+  const playerWidth = Math.max(260, Math.min(width - 48, width));
+  const playerHeight = Math.round(playerWidth / ratio);
+  return (
+    <View style={{ marginRight: 8, flex: 1 }}>
+      <YoutubePlayer
+        height={playerHeight}
+        width={playerWidth}
+        videoId={videoId}
+        play={!!autoplay}
+        initialPlayerParams={{ controls: true, modestbranding: true }}
+        webViewProps={{ allowsFullscreenVideo: true, mediaPlaybackRequiresUserAction: false, allowsInlineMediaPlayback: true }}
+      />
+    </View>
+  );
+}
+
+
+function MediaItem({ url }) {
+  const [ratio, setRatio] = useState(1);
+  const [ytPlaying, setYtPlaying] = useState(false);
+  const isVideo = isVideoUrl(url);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!url || isVideo) return;
+    Image.getSize(
+      url,
+      (w, h) => mounted && w && h && setRatio(w / h),
+      () => mounted && setRatio(1)
+    );
+    return () => {
+      mounted = false;
+    };
+  }, [url, isVideo]);
+
+  if (!url) return null;
+
+  // YouTube preview with thumbnail, tap to play
+  if (isYouTubeUrl(url)) {
+    const vid = getYouTubeId(url);
+    if (!ytPlaying) {
+      const thumb = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+      return (
+        <TouchableOpacity onPress={() => setYtPlaying(true)} activeOpacity={0.8} style={{ marginRight: 8, flex: 1 }}>
+          <Image
+            source={{ uri: thumb }}
+            style={{ width: '100%', height: undefined, aspectRatio: 16 / 9, borderRadius: 8 }}
+            resizeMode="cover"
+          />
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="play-circle" size={64} color="#ffffffcc" />
+          </View>
+        </TouchableOpacity>
+      );
+    }
+    return <YouTubeItem videoId={vid} ratio={16 / 9} autoplay />;
+  }
+
+  if (isVideo) {
+    return <VideoItem url={url} ratio={ratio} />;
+  }
+
+  return (
+    <View style={{ marginRight: 8, flex: 1 }}>
+      <Image
+        source={{ uri: url }}
+        style={{ width: "100%", height: undefined, aspectRatio: ratio || 1, borderRadius: 8 }}
+        resizeMode="cover"
+      />
+    </View>
+  );
+}
+
+function extractMediaUrls(post) {
+  const urls = [];
+  // From related post_images rows
+  if (Array.isArray(post?.post_images)) {
+    for (const item of post.post_images) {
+      const u = item?.url || item?.image_url || item?.uri;
+      if (u && !urls.includes(u)) urls.push(u);
+    }
+  }
+  // Fallback single media fields on the post
+  if (post?.image_url && !urls.includes(post.image_url)) urls.push(post.image_url);
+  if (post?.gif_url && !urls.includes(post.gif_url)) urls.push(post.gif_url);
+  if (post?.video_url && !urls.includes(post.video_url)) urls.push(post.video_url);
+  // Detect YouTube links in title/description text
+  try {
+    const txt = [post?.title, post?.description].filter(Boolean).join(" \n ");
+    if (hasYoutubeLink(txt)) {
+      const vid = extractYoutubeId(txt);
+      if (vid) {
+        const y = `https://youtu.be/${vid}`;
+        if (!urls.includes(y)) urls.push(y);
+      }
+    }
+  } catch {}
+  return urls;
+}
+
+export default function PostCard({ post, user, onDeleted }) {
+  const { theme } = useTheme();
+  const { profile: myProfile, isElevated: ctxElevated } = useAuth();
+  const navigation = useNavigation();
+  const [commentCount, setCommentCount] = useState(0);
+  const [showComments, setShowComments] = useState(false);
+  const isElevated = !!ctxElevated || (myProfile?.role && ['admin','ceo'].includes(String(myProfile.role).toLowerCase())) || !!(myProfile?.is_admin || myProfile?.is_ceo);
+  const isOwner = !!user && user.id === post?.user_id;
+  const canDelete = !!user && (isElevated || isOwner);
+  const [adminMenuVisible, setAdminMenuVisible] = useState(false);
+  const [reasonVisible, setReasonVisible] = useState(false);
+  const [flagVisible, setFlagVisible] = useState(false);
+
+  // relies on AuthContext profile/isElevated now
+
+  const handleDeletePost = () => {
+    if (!canDelete) return;
+    Alert.alert("Delete Post", "Are you sure you want to delete this post?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            let q = supabase.from("posts").delete().eq("id", post.id);
+            if (!isElevated) q = q.eq("user_id", user.id);
+            const { error } = await q;
+            if (error) throw error;
+            try { onDeleted?.(post.id); } catch {}
+            try { navigation.canGoBack() && navigation.goBack(); } catch {}
+          } catch (e) {
+            console.error("delete post:", e.message);
+            showToast('Delete failed');
+            return;
+          }
+          showToast('Post deleted');
+        },
+      },
+    ]);
+  };
+
+  const handleAdminDeleteWithReason = async (reason) => {
+    try {
+      // If any previous audit rows exist, remove them to avoid FK blocks
+      try { await supabase.from('post_deletions').delete().eq('post_id', post.id); } catch {}
+      // delete post first to avoid FK constraint blocks
+      let q = supabase.from("posts").delete().eq("id", post.id);
+      if (!isElevated) q = q.eq("user_id", user.id);
+      const { error } = await q;
+      if (error) throw error;
+      if (isElevated && !isOwner) {
+        await sendModerationNotice({ userId: post.user_id, postId: post.id, reason });
+      }
+      // try to record deletion; ignore failure if FK blocks
+      try {
+        await recordPostDeletion({
+          postId: post.id,
+          deletedBy: user.id,
+          userId: post.user_id,
+          title: post.title,
+          description: post.description,
+          reason,
+        });
+      } catch {}
+      try { onDeleted?.(post.id); } catch {}
+      showToast('Post removed');
+      try { navigation.canGoBack() && navigation.goBack(); } catch {}
+    } catch (e) {
+      console.error("delete post (reason):", e.message);
+      showToast('Delete failed');
+    }
+  };
+
+  const fetchCommentsCount = React.useCallback(async () => {
+    try {
+      const count = await getCommentCount(post.id);
+      setCommentCount(count);
+    } catch (err) {
+      console.error("Error fetching comment count:", err.message);
+    }
+  }, [post?.id]);
+
+  useEffect(() => {
+    if (!post?.id) return;
+    fetchCommentsCount();
+
+    const channel = supabase
+      .channel("comments-post-card-" + post.id)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "comments", filter: `post_id=eq.${post.id}` },
+        () => fetchCommentsCount()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [post?.id, fetchCommentsCount]);
+
+  return (
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: theme.card, borderColor: theme.border },
+      ]}
+    >
+      {isElevated && (
+        <TouchableOpacity
+          onPress={() => setAdminMenuVisible(true)}
+          style={styles.gearBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Open admin actions"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="settings-outline" size={18} color={theme.muted} />
+        </TouchableOpacity>
+      )}
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => {
+            const uname = post.profiles?.username;
+            if (uname) {
+              navigation.navigate("Profile", { screen: "PublicProfile", params: { username: uname } });
+            } else {
+              navigation.navigate("Profile");
+            }
+          }}
+          style={{ flexDirection: "row", alignItems: "center" }}
+          activeOpacity={0.7}
+        >
+          {post.profiles?.profile_image_url ? (
+            <Image source={{ uri: post.profiles.profile_image_url }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: theme.cardSoft }]} />
+          )}
+          <View>
+            <Text style={[styles.username, { color: theme.text }]}>
+              {post.profiles?.username || "Unknown"}
+            </Text>
+            <Text style={[styles.timestamp, { color: theme.muted }]}>
+              {dayjs.utc(post.created_at).local().fromNow()}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+  {/* Title */}
+  {!!post.title && (() => {
+    const ttl = String(post.title || '');
+    const hasYT = hasYoutubeLink(ttl);
+    const cleaned = hasYT ? ttl.replace(/(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=[^\s]+|youtu\.be\/[^\s]+)/gi, '').replace(/\s{2,}/g, ' ').trim() : ttl;
+    if (!cleaned) return null;
+    return (
+      <MentionsText text={cleaned} style={[styles.title, { color: theme.text }]} mentionStyle={{ color: theme.primary }} />
+    );
+  })()}
+
+  {/* Description */}
+  {!!post.description && (() => {
+    const desc = String(post.description || '');
+    const hasYT = hasYoutubeLink(desc);
+    const cleaned = hasYT ? desc.replace(/(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=[^\s]+|youtu\.be\/[^\s]+)/gi, '').replace(/\s{2,}/g, ' ').trim() : desc;
+    if (!cleaned) return null;
+    return (
+      <MentionsText text={cleaned} style={[styles.description, { color: theme.text }]} mentionStyle={{ color: theme.primary }} />
+    );
+  })()}
+
+      {/* Images */}
+      {(() => {
+        const media = extractMediaUrls(post);
+        if (!media.length) return null;
+        if (media.length === 1) {
+          return (
+            <View style={styles.mediaRow}>
+              <MediaItem key={`single-${post.id}`} url={media[0]} />
+            </View>
+          );
+        }
+        return (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaRow}>
+            {media.map((u, idx) => (
+              <MediaItem key={`${post.id}-${idx}-${u}`} url={u} />
+            ))}
+          </ScrollView>
+        );
+      })()}
+
+      {/* Footer: Votes + Comments */}
+      <View style={styles.footerRow}>
+        <VoteButtons postId={post.id} userId={user?.id} />
+        <TouchableOpacity onPress={() => setShowComments((v) => !v)}>
+          <Text style={[styles.commentCount, { color: theme.muted }]}> 
+            💬 {commentCount}
+          </Text>
+        </TouchableOpacity>
+        {isOwner ? (
+          <TouchableOpacity onPress={handleDeletePost}>
+            <Text style={[styles.commentCount, { color: 'red' }]}>🗑</Text>
+          </TouchableOpacity>
+        ) : (
+          !!user && (
+            <TouchableOpacity onPress={() => setFlagVisible(true)} accessibilityLabel="Report post" style={{ paddingHorizontal: 6, paddingVertical: 4 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="flag-outline" size={18} color={theme.muted} />
+            </TouchableOpacity>
+          )
+        )}
+      </View>
+
+      {showComments && (
+        <CommentsSection
+          postId={post.id}
+          onCommentCountChange={setCommentCount}
+        />
+      )}
+      <AdminActionMenu
+        visible={adminMenuVisible}
+        onClose={() => setAdminMenuVisible(false)}
+        onDelete={() => {
+          setAdminMenuVisible(false);
+          handleDeletePost();
+        }}
+        onAskReason={() => { setAdminMenuVisible(false); setReasonVisible(true); }}
+        onOpenDashboard={() => { setAdminMenuVisible(false); navigation.navigate('Profile', { screen: 'AdminDashboard' }); }}
+      />
+      <ReasonModal
+        visible={reasonVisible}
+        title="Reason for removal"
+        placeholder="Explain why this post is removed"
+        onCancel={() => setReasonVisible(false)}
+        onSubmit={(txt) => { setReasonVisible(false); handleAdminDeleteWithReason(txt); }}
+      />
+      <FlagPostModal
+        visible={flagVisible}
+        onCancel={() => setFlagVisible(false)}
+        onSubmit={async (reason) => {
+          setFlagVisible(false);
+          try {
+            await flagPost({ postId: post.id, userId: user.id, reason });
+            showToast('Reported');
+          } catch (e) { console.error('flag post:', e.message); showToast('Report failed'); }
+        }}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    borderWidth: 1,
+    borderRadius: 10,
+    marginBottom: 16,
+    padding: 12,
+    position: 'relative',
+  },
+  gearBtn: { position: 'absolute', right: 8, top: 8, padding: 4, borderRadius: 12 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 8,
+    backgroundColor: "#ccc",
+  },
+  username: {
+    fontFamily: "BlackOpsOne-Regular",
+    fontSize: 16,
+  },
+  timestamp: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  title: { fontFamily: "BlackOpsOne-Regular", fontSize: 16, marginBottom: 6 },
+  description: { fontSize: 14, lineHeight: 20 },
+  mediaRow: { marginTop: 8, width: "100%" },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  commentCount: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  debugPill: { position: 'absolute', left: 8, top: 8, backgroundColor: '#333c', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  debugText: { color: '#fff', fontSize: 10 },
+});
+
+
+
+
