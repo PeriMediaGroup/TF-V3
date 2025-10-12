@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, Alert, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import YoutubePlayer from "react-native-youtube-iframe";
@@ -20,6 +20,8 @@ import { hasYoutubeLink, extractYoutubeId } from "../../utils/linkifyText";
 import AdminActionMenu from "./AdminActionMenu";
 import ReasonModal from "../common/ReasonModal";
 import FlagPostModal from "./FlagPostModal";
+import PollModule from "../polls/PollModule";
+import usePoll from "../../hooks/usePoll";
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
 
@@ -289,6 +291,43 @@ export default function PostCard({ post, user, onDeleted }) {
   const [adminMenuVisible, setAdminMenuVisible] = useState(false);
   const [reasonVisible, setReasonVisible] = useState(false);
   const [flagVisible, setFlagVisible] = useState(false);
+  const pollRelation = Array.isArray(post?.polls_app) ? post.polls_app : null;
+  const pollPreview = pollRelation && pollRelation.length > 0 ? pollRelation[0] : null;
+  const shouldFetchPollByPost =
+    !!post?.id && (!pollRelation || pollRelation.length === 0);
+  const {
+    poll,
+    loading: pollLoading,
+    vote: voteOnPoll,
+    revokeVote: revokePollVote,
+  } = usePoll({
+    postId: shouldFetchPollByPost ? post?.id : null,
+    pollId: pollPreview?.id || null,
+    userId: user?.id || null,
+  });
+  const pollDisabled = !user?.id;
+
+  const handlePollVote = useCallback(
+    async (optionId) => {
+      if (!optionId) return;
+      try {
+        await voteOnPoll(optionId);
+      } catch (err) {
+        console.error("poll vote failed:", err?.message || err);
+        showToast("Unable to record vote");
+      }
+    },
+    [voteOnPoll]
+  );
+
+  const handlePollRevoke = useCallback(async () => {
+    try {
+      await revokePollVote();
+    } catch (err) {
+      console.error("poll revoke failed:", err?.message || err);
+      showToast("Unable to update vote");
+    }
+  }, [revokePollVote]);
 
   // relies on AuthContext profile/isElevated now
 
@@ -301,6 +340,11 @@ export default function PostCard({ post, user, onDeleted }) {
         style: "destructive",
         onPress: async () => {
           try {
+            const { error: reportsError } = await supabase
+              .from("reports")
+              .delete()
+              .eq("post_id", post.id);
+            if (reportsError) throw reportsError;
             let q = supabase.from("posts").delete().eq("id", post.id);
             if (!isElevated) q = q.eq("user_id", user.id);
             const { error } = await q;
@@ -322,6 +366,11 @@ export default function PostCard({ post, user, onDeleted }) {
     try {
       // If any previous audit rows exist, remove them to avoid FK blocks
       try { await supabase.from('post_deletions').delete().eq('post_id', post.id); } catch {}
+      const { error: reportsError } = await supabase
+        .from('reports')
+        .delete()
+        .eq('post_id', post.id);
+      if (reportsError) throw reportsError;
       // delete post first to avoid FK constraint blocks
       let q = supabase.from("posts").delete().eq("id", post.id);
       if (!isElevated) q = q.eq("user_id", user.id);
@@ -447,6 +496,24 @@ export default function PostCard({ post, user, onDeleted }) {
     );
   })()}
 
+      {pollLoading && pollPreview && !poll ? (
+        <View style={[styles.pollPlaceholder, { borderColor: theme.border }]}>
+          <Text style={[styles.pollPlaceholderText, { color: theme.muted }]}>
+            Loading poll…
+          </Text>
+        </View>
+      ) : null}
+
+      {poll ? (
+        <PollModule
+          poll={poll}
+          onVote={handlePollVote}
+          onRevoke={handlePollRevoke}
+          loading={pollLoading}
+          disabled={pollDisabled}
+        />
+      ) : null}
+
       {/* Images */}
       {(() => {
         const media = extractMediaUrls(post);
@@ -553,6 +620,18 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: "BlackOpsOne-Regular", fontSize: 16, marginBottom: 6 },
   description: { fontSize: 14, lineHeight: 20 },
+  pollPlaceholder: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pollPlaceholderText: {
+    fontSize: 13,
+    fontStyle: "italic",
+  },
   mediaRow: { marginTop: 8, width: "100%" },
   footerRow: {
     flexDirection: "row",

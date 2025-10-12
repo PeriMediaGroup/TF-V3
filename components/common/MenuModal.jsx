@@ -13,6 +13,7 @@ const MENU_LINKS = [
   { label: "About TriggerFeed", url: "https://triggerfeed.com/about" },
   { label: "Contact", url: "https://triggerfeed.com/contact" },
   { label: "Buy us a round", url: "https://buymeacoffee.com/triggerfeed" },
+  { label: "Privacy!", url: "https://triggerfeed.com/privacy" },
 ];
 
 export default function MenuModal({ visible, onClose }) {

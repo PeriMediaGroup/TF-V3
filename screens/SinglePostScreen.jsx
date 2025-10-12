@@ -28,9 +28,11 @@ export default function SinglePostScreen() {
           image_url,
           gif_url,
           video_url,
+          visibility,
           created_at,
           profiles ( username, profile_image_url ),
-          post_images ( id, url )
+          post_images ( id, url ),
+          polls_app ( id )
         `)
         .eq("id", postId)
         .maybeSingle();

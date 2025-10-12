@@ -1,5 +1,5 @@
 // components/Header.js
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors, Fonts } from "../../styles/GlobalStyles";
@@ -13,6 +13,13 @@ export default function Header({ showBell = false, unreadCount, showMenu = true 
   const [menuVisible, setMenuVisible] = useState(false);
   const { user } = useAuth();
   const [internalCount, setInternalCount] = useState(0);
+  const handleUnreadChange = useCallback(
+    (count) => {
+      if (typeof unreadCount === "number") return;
+      setInternalCount(count || 0);
+    },
+    [unreadCount]
+  );
 
   // Auto-load unread count if parent hasn't provided one
   useEffect(() => {
@@ -100,6 +107,7 @@ export default function Header({ showBell = false, unreadCount, showMenu = true 
           visible={drawerVisible}
           onClose={() => setDrawerVisible(false)}
           position="right"
+          onUnreadChange={handleUnreadChange}
         />
       )}
 

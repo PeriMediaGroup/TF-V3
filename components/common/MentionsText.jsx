@@ -1,14 +1,20 @@
 import React from "react";
-import { Text } from "react-native";
+import { Text, Linking } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
-export default function MentionsText({ text, style, mentionStyle, hashtagStyle }) {
+export default function MentionsText({
+  text,
+  style,
+  mentionStyle,
+  hashtagStyle,
+  linkStyle,
+}) {
   const navigation = useNavigation();
   if (!text) return null;
 
   // Parse both @mentions and #hashtags
   const parts = [];
-  const regex = /(@[A-Za-z0-9_.-]+|#[A-Za-z0-9_]+)/g;
+  const regex = /(@[A-Za-z0-9_.-]+|#[A-Za-z0-9_]+|https?:\/\/[^\s]+)/g;
   let lastIndex = 0;
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -20,6 +26,8 @@ export default function MentionsText({ text, style, mentionStyle, hashtagStyle }
       parts.push({ type: "mention", value: token, username: token.slice(1) });
     } else if (token.startsWith("#")) {
       parts.push({ type: "hashtag", value: token, tag: token.slice(1) });
+    } else if (token.startsWith("http")) {
+      parts.push({ type: "link", value: token });
     }
     lastIndex = match.index + token.length;
   }
@@ -50,6 +58,20 @@ export default function MentionsText({ text, style, mentionStyle, hashtagStyle }
               key={`h-${idx}-${p.tag}`}
               style={[style, hashtagStyle, { textDecorationLine: "underline" }]}
               onPress={() => navigation.navigate("Feed", { screen: "TaggedFeed", params: { tag: p.tag } })}
+            >
+              {p.value}
+            </Text>
+          );
+        }
+        if (p.type === "link") {
+          return (
+            <Text
+              key={`l-${idx}-${p.value}`}
+              style={[style, linkStyle, { textDecorationLine: "underline" }]}
+              onPress={() => {
+                const url = p.value.startsWith("http") ? p.value : `https://${p.value}`;
+                Linking.openURL(url).catch(() => {});
+              }}
             >
               {p.value}
             </Text>

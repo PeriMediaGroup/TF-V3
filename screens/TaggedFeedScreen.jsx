@@ -28,9 +28,11 @@ export default function TaggedFeedScreen() {
           image_url,
           gif_url,
           video_url,
+          visibility,
           created_at,
           profiles ( username, profile_image_url ),
-          post_images ( id, url )
+          post_images ( id, url ),
+          polls_app ( id )
         `)
         .eq("visibility", "public")
         .or(`title.ilike.${like},description.ilike.${like}`)
@@ -82,4 +84,3 @@ const styles = StyleSheet.create({
   list: { padding: 12 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 });
-

@@ -9,7 +9,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { Colors } from "../../styles/GlobalStyles";
 import SideDrawer from "../common/SideDrawer";
 
-export default function NotificationsDrawer({ visible, onClose }) {
+export default function NotificationsDrawer({ visible, onClose, onUnreadChange }) {
   const { user, profile: authProfile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -192,6 +192,12 @@ export default function NotificationsDrawer({ visible, onClose }) {
       supabase.removeChannel(channel);
     };
   }, [user?.id, loadNotifications]);
+
+  useEffect(() => {
+    if (typeof onUnreadChange === "function") {
+      onUnreadChange(unreadCount);
+    }
+  }, [onUnreadChange, unreadCount]);
 
   return (
     <SideDrawer

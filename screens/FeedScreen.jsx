@@ -106,7 +106,8 @@ export default function FeedScreen() {
             created_at,
             sticky,
             profiles ( username, profile_image_url ),
-            post_images ( id, url )
+            post_images ( id, url ),
+            polls_app ( id )
           `
           )
           .in("user_id", friendIdList)
@@ -153,7 +154,8 @@ export default function FeedScreen() {
             created_at,
             sticky,
             profiles ( username, profile_image_url ),
-            post_images ( id, url )
+            post_images ( id, url ),
+            polls_app ( id )
           `
           )
           .in("id", ids);
@@ -186,7 +188,8 @@ export default function FeedScreen() {
             created_at,
             sticky,
             profiles ( username, profile_image_url ),
-            post_images ( id, url )
+            post_images ( id, url ),
+            polls_app ( id )
           `
           )
           .eq("visibility", "public")
@@ -364,6 +367,7 @@ export default function FeedScreen() {
         <FlatList
           ref={listRef}
           data={posts}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <PostCard post={item} user={user} onDeleted={handleRemovePost} />
           )}

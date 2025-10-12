@@ -8,6 +8,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from "react-native";
 import { useAuth } from "../../auth/AuthContext";
 import { useTheme } from "../../styles/ThemeContext";
@@ -16,6 +17,7 @@ import Comment from "./Comment";
 import { parseMentions } from "../../utils/parseMentions";
 import { useMentionNotifier } from "../../hooks/useMentionNotifier";
 import MentionInput from "../common/MentionInput";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 // dayjs was unused here; removed.
 
 export default function CommentsSection({ postId, onCommentCountChange, initialCommentId }) {
@@ -28,6 +30,30 @@ export default function CommentsSection({ postId, onCommentCountChange, initialC
   const [submitting, setSubmitting] = useState(false);
   const listRef = useRef(null);
   const notifyMentions = useMentionNotifier();
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardInset = Math.max(0, keyboardHeight - insets.bottom);
+  const keyboardOffset = Platform.OS === "ios" ? insets.top + 48 : 0;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const handleShow = (event) => {
+      const height = event?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(height);
+    };
+
+    const handleHide = () => setKeyboardHeight(0);
+
+    const showSub = Keyboard.addListener(showEvent, handleShow);
+    const hideSub = Keyboard.addListener(hideEvent, handleHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const loadComments = useCallback(async () => {
     setLoading(true);
@@ -70,6 +96,11 @@ export default function CommentsSection({ postId, onCommentCountChange, initialC
     });
   };
 
+  const focusCommentInput = useCallback(() => {
+    setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    }, 60);
+  }, []);
   const handleAddComment = async () => {
     const trimmed = newComment.trim();
     if (!trimmed || !user) return;
@@ -149,10 +180,15 @@ export default function CommentsSection({ postId, onCommentCountChange, initialC
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={80}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={keyboardOffset}
     >
-      <View style={[styles.container, { backgroundColor: theme.surface }]}>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: theme.surface, paddingBottom: keyboardInset },
+        ]}
+      >
         <Text style={[styles.header, { color: theme.text }]}>Comments</Text>
 
         {loading ? (
@@ -166,6 +202,7 @@ export default function CommentsSection({ postId, onCommentCountChange, initialC
         ) : (
           <FlatList
             ref={listRef}
+            keyboardShouldPersistTaps="handled"
             data={comments}
             keyExtractor={(item, idx) =>
               (item?.id ?? `comment-${idx}`).toString()
@@ -173,7 +210,7 @@ export default function CommentsSection({ postId, onCommentCountChange, initialC
             renderItem={({ item, index }) => (
               <Comment comment={item} index={index} onDeleted={handleDeleted} />
             )}
-            contentContainerStyle={{ paddingBottom: 80 }}
+            contentContainerStyle={{ paddingBottom: 80 + keyboardInset }}
             removeClippedSubviews
             initialNumToRender={8}
             windowSize={5}
@@ -181,7 +218,7 @@ export default function CommentsSection({ postId, onCommentCountChange, initialC
         )}
 
         {user && (
-          <View style={styles.inputRow}>
+          <View style={[styles.inputRow, keyboardInset ? { paddingBottom: Math.max(0, keyboardInset - 16) } : null]}>
             <MentionInput
               value={newComment}
               onChangeText={setNewComment}
@@ -197,6 +234,7 @@ export default function CommentsSection({ postId, onCommentCountChange, initialC
                 },
               ]}
               style={{ flex: 1, marginRight: 8 }}
+              onFocus={focusCommentInput}
             />
             <Pressable
               style={[styles.button, { backgroundColor: theme.primary }]}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   View,
   TextInput,
@@ -23,17 +23,20 @@ const locateMention = (text, cursor) => {
   return { start: atIndex, query: token };
 };
 
-const MentionInput = ({
-  value,
-  onChangeText,
-  multiline = false,
-  placeholder,
-  style,
-  inputStyle,
-  currentUsername,
-  maxSuggestions = 6,
-  ...rest
-}) => {
+const MentionInputInner = (
+  {
+    value,
+    onChangeText,
+    multiline = false,
+    placeholder,
+    style,
+    inputStyle,
+    currentUsername,
+    maxSuggestions = 6,
+    ...rest
+  },
+  forwardedRef
+) => {
   const { theme } = useTheme();
   const inputRef = useRef(null);
   const [selection, setSelection] = useState({ start: value?.length || 0, end: value?.length || 0 });
@@ -81,18 +84,17 @@ const MentionInput = ({
         const { data, error } = await supabase
           .from("profiles")
           .select("username")
-          .ilike("username", trimmed + "%")
+          .ilike("username", `${trimmed}%`)
           .limit(maxSuggestions);
-        if (!cancelled) {
-          if (error) {
-            setSuggestions([]);
-          } else {
-            const filtered = (data || [])
-              .map((row) => row.username)
-              .filter(Boolean)
-              .filter((username) => !currentUsername || username.toLowerCase() !== currentUsername.toLowerCase());
-            setSuggestions(filtered);
-          }
+        if (cancelled) return;
+        if (error) {
+          setSuggestions([]);
+        } else {
+          const filtered = (data || [])
+            .map((row) => row.username)
+            .filter(Boolean)
+            .filter((username) => !currentUsername || username.toLowerCase() !== currentUsername.toLowerCase());
+          setSuggestions(filtered);
         }
       } catch {
         if (!cancelled) setSuggestions([]);
@@ -124,7 +126,7 @@ const MentionInput = ({
       const cursor = selectionRef.current.start;
       const before = (value || "").slice(0, activeMention.start);
       const after = (value || "").slice(cursor);
-      const insertion = "@" + username + " ";
+      const insertion = `@${username} `;
       const nextValue = before + insertion + after;
       const newCursor = before.length + insertion.length;
       onChangeText?.(nextValue);
@@ -141,12 +143,18 @@ const MentionInput = ({
     [activeMention, onChangeText, value]
   );
 
+  useImperativeHandle(forwardedRef, () => ({
+    focus: () => inputRef.current?.focus?.(),
+    blur: () => inputRef.current?.blur?.(),
+    getNode: () => inputRef.current,
+  }));
+
   const suggestionList = useMemo(() => {
     if (!activeMention || (!suggestions.length && !loading)) return null;
     return (
       <View style={[styles.suggestionBox(theme), rest.suggestionsContainerStyle]}>
         {loading && !suggestions.length ? (
-          <Text style={[styles.suggestionText(theme), rest.suggestionTextStyle]}>Searching.</Text>
+          <Text style={[styles.suggestionText(theme), rest.suggestionTextStyle]}>Searching…</Text>
         ) : (
           suggestions.map((username) => (
             <TouchableOpacity
@@ -221,4 +229,4 @@ const styles = StyleSheet.create({
   }),
 });
 
-export default MentionInput;
+export default forwardRef(MentionInputInner);
