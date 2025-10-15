@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
+  Alert,
   Modal,
   View,
   Text,
@@ -72,26 +73,30 @@ export default function MediaPickerSheet({
         onRecordVideo?.();
         return;
       }
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm?.granted) {
-        if (perm?.canAskAgain) {
-          // user dismissed without granting; nothing to do yet
-          return;
-        }
-        onClose?.();
+
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Camera access is required to take photos.");
         return;
       }
-      const res = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All,
-        allowsEditing: true,
-        videoMaxDuration: 30,
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        cameraFacing: ImagePicker.CameraType.back,
+        allowsEditing: false,
         quality: 1,
+        exif: true,
+        preferredAssetRepresentationMode: ImagePicker.AssetRepresentationMode.Current,
       });
-      if (!res.canceled) {
-        onAdd?.([res.assets[0].uri]);
+
+      if (!result.canceled) {
+        onAdd?.([result.assets[0].uri]);
         onClose?.();
       }
-    } catch {}
+    } catch (err) {
+      console.error("Camera error:", err);
+      Alert.alert("Camera error", err?.message || "Unable to open camera.");
+    }
   };
 
   const confirm = () => {
