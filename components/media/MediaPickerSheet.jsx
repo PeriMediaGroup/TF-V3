@@ -76,7 +76,10 @@ export default function MediaPickerSheet({
 
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission needed", "Camera access is required to take photos.");
+        Alert.alert(
+          "Permission needed",
+          "Camera access is required to take photos."
+        );
         return;
       }
 
@@ -86,7 +89,6 @@ export default function MediaPickerSheet({
         allowsEditing: false,
         quality: 1,
         exif: true,
-        preferredAssetRepresentationMode: ImagePicker.AssetRepresentationMode.Current,
       });
 
       if (!result.canceled) {
