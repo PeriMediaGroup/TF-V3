@@ -12,7 +12,7 @@ export default {
       fallbackToCacheTimeout: 0,
       url: 'https://u.expo.dev/0988d9a8-92df-4221-b1dc-51d74f283b3d'
     },
-    version: '1.1.2',
+    version: '1.1.9',
     orientation: 'default',
     icon: './assets/images/icon/icon.png',
     splash: {
@@ -24,6 +24,7 @@ export default {
     plugins: [
       'expo-video',
       'expo-font',
+      "expo-image-picker",
       [
         'expo-camera',
         {
@@ -40,7 +41,7 @@ export default {
     },
     android: {
       package: 'com.perimediagroup.triggerfeed',
-      versionCode: 12,
+      versionCode: 19,
       permissions: ['CAMERA', 'RECORD_AUDIO', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE'],
       adaptiveIcon: {
         foregroundImage: './assets/images/icon/adaptive-foreground.png',
@@ -52,10 +53,10 @@ export default {
       eas: {
         projectId: '0988d9a8-92df-4221-b1dc-51d74f283b3d'
       },
-      EXPO_PUBLIC_SUPABASE_URL: "https://your-supabase-url.supabase.co",
+      EXPO_PUBLIC_SUPABASE_URL: "https://usvcucujzfzazszcaonb.supabase.co",
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME: process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME,
-      EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET: "triggerfeed_unsigned",
+      EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET: process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
       EXPO_PUBLIC_GIPHY_API_KEY: process.env.EXPO_PUBLIC_GIPHY_API_KEY
     }
   }

@@ -1,54 +1,73 @@
 // utils/cloudinary.js
 
-export async function uploadImage(uri, publicId) {
-  const cloud = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const preset = process.env.EXPO_PUBLIC_CLOUDINARY_PRESET; // unsigned preset for images
-  const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER; // optional
-  if (!cloud || !preset) {
-    throw new Error("Cloudinary not configured: set EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME and EXPO_PUBLIC_CLOUDINARY_PRESET in .env");
+let hasLoggedCloudinaryConfig = false;
+
+const getCloudinaryConfig = () => {
+  const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+  if (!hasLoggedCloudinaryConfig) {
+    console.log("[cloudinary] EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME:", cloudName);
+    console.log("[cloudinary] EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET:", uploadPreset);
+    hasLoggedCloudinaryConfig = true;
   }
+
+  if (!cloudName || !uploadPreset) {
+    throw new Error(
+      "Cloudinary not configured: set EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME and EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET in .env"
+    );
+  }
+
+  return { cloudName, uploadPreset };
+};
+
+const appendOptionalFields = (formData, { publicId, folder }) => {
+  if (publicId) formData.append("public_id", publicId);
+  if (folder) formData.append("folder", folder);
+};
+
+const buildEndpoint = (cloudName, type) =>
+  `https://api.cloudinary.com/v1_1/${cloudName}/${type}/upload`;
+
+const uploadViaFetch = async (endpoint, formData, type) => {
+  const res = await fetch(endpoint, { method: "POST", body: formData });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error?.message || `Cloudinary ${type} upload failed`);
+  }
+  return data.secure_url;
+};
+
+export async function uploadImage(uri, publicId) {
+  const { cloudName, uploadPreset } = getCloudinaryConfig();
+  const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER; // optional
+
   const formData = new FormData();
   formData.append("file", {
     uri,
     type: "image/jpeg",
     name: "upload.jpg",
   });
-  formData.append("upload_preset", preset);
-  if (publicId) formData.append("public_id", publicId);
-  if (folder) formData.append("folder", folder);
+  formData.append("upload_preset", uploadPreset);
+  appendOptionalFields(formData, { publicId, folder });
 
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloud}/image/upload`,
-    { method: "POST", body: formData }
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || "Cloudinary image upload failed");
-  return data.secure_url;
+  return uploadViaFetch(buildEndpoint(cloudName, "image"), formData, "image");
 }
 
 export async function uploadVideo(uri) {
-  const cloud = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const preset = process.env.EXPO_PUBLIC_CLOUDINARY_VIDEO_PRESET || process.env.EXPO_PUBLIC_CLOUDINARY_PRESET; // unsigned preset for video
+  const { cloudName, uploadPreset } = getCloudinaryConfig();
   const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER; // optional
-  if (!cloud || !preset) {
-    throw new Error("Cloudinary not configured: set EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME and EXPO_PUBLIC_CLOUDINARY_PRESET in .env");
-  }
+
   const formData = new FormData();
   formData.append("file", {
     uri,
     type: "video/mp4",
     name: "upload.mp4",
   });
-  formData.append("upload_preset", preset);
-  if (folder) formData.append("folder", folder);
+  formData.append("upload_preset", uploadPreset);
+  appendOptionalFields(formData, { folder });
 
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloud}/video/upload`,
-    { method: "POST", body: formData }
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || "Cloudinary video upload failed");
-  return data.secure_url;
+  return uploadViaFetch(buildEndpoint(cloudName, "video"), formData, "video");
 }
 
 // Progress-enabled uploads using XMLHttpRequest
@@ -81,28 +100,27 @@ const xhrUpload = (url, formData, onProgress) =>
   });
 
 export async function uploadImageWithProgress(uri, onProgress, publicId) {
-  const cloud = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const preset = process.env.EXPO_PUBLIC_CLOUDINARY_PRESET;
+  const { cloudName, uploadPreset } = getCloudinaryConfig();
   const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER;
-  if (!cloud || !preset) throw new Error("Cloudinary not configured");
+
   const formData = new FormData();
   formData.append("file", { uri, type: "image/jpeg", name: "upload.jpg" });
-  formData.append("upload_preset", preset);
-  if (publicId) formData.append("public_id", publicId);
-  if (folder) formData.append("folder", folder);
-  const res = await xhrUpload(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, formData, onProgress);
+  formData.append("upload_preset", uploadPreset);
+  appendOptionalFields(formData, { publicId, folder });
+
+  const res = await xhrUpload(buildEndpoint(cloudName, "image"), formData, onProgress);
   return res.secure_url;
 }
 
 export async function uploadVideoWithProgress(uri, onProgress) {
-  const cloud = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const preset = process.env.EXPO_PUBLIC_CLOUDINARY_VIDEO_PRESET || process.env.EXPO_PUBLIC_CLOUDINARY_PRESET;
+  const { cloudName, uploadPreset } = getCloudinaryConfig();
   const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER;
-  if (!cloud || !preset) throw new Error("Cloudinary not configured");
+
   const formData = new FormData();
   formData.append("file", { uri, type: "video/mp4", name: "upload.mp4" });
-  formData.append("upload_preset", preset);
-  if (folder) formData.append("folder", folder);
-  const res = await xhrUpload(`https://api.cloudinary.com/v1_1/${cloud}/video/upload`, formData, onProgress);
+  formData.append("upload_preset", uploadPreset);
+  appendOptionalFields(formData, { folder });
+
+  const res = await xhrUpload(buildEndpoint(cloudName, "video"), formData, onProgress);
   return res.secure_url;
 }
