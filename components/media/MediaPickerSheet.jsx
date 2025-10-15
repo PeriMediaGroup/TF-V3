@@ -73,9 +73,16 @@ export default function MediaPickerSheet({
         return;
       }
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (perm.status !== "granted") return;
+      if (!perm?.granted) {
+        if (perm?.canAskAgain) {
+          // user dismissed without granting; nothing to do yet
+          return;
+        }
+        onClose?.();
+        return;
+      }
       const res = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["photo", "video"], // replaces MediaTypeOptions.All
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
         allowsEditing: true,
         videoMaxDuration: 30,
         quality: 1,
@@ -124,7 +131,7 @@ export default function MediaPickerSheet({
               },
             ]}
           >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>✓</Text>
+            <Ionicons name="checkmark" size={16} color="#fff" />
           </View>
         )}
       </TouchableOpacity>
