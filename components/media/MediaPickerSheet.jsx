@@ -115,7 +115,6 @@ export default function MediaPickerSheet({
             size={32}
             color={theme?.text || "#fff"}
           />
-          <Text style={{ color: "red" }}>Camera</Text>
         </TouchableOpacity>
       );
     }

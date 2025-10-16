@@ -1,13 +1,24 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { PinchGestureHandler, State } from 'react-native-gesture-handler';
-import { CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
-import * as ScreenOrientation from 'expo-screen-orientation';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
+import { PinchGestureHandler, State } from "react-native-gesture-handler";
+import {
+  CameraView,
+  useCameraPermissions,
+  useMicrophonePermissions,
+} from "expo-camera";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 const MAX_SECONDS = 90;
 const { Orientation, OrientationLock } = ScreenOrientation;
+
 export default function VideoRecorderScreen() {
   const navigation = useNavigation();
   const cameraRef = useRef(null);
@@ -25,6 +36,8 @@ export default function VideoRecorderScreen() {
   const [baseZoom, setBaseZoom] = useState(0);
   const [torch, setTorch] = useState(false);
   const [mute, setMute] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [requestingPermissions, setRequestingPermissions] = useState(false);
   const timerRef = useRef(null);
 
   const allowRotation = useCallback(async () => {
@@ -59,14 +72,53 @@ export default function VideoRecorderScreen() {
     []
   );
 
+  const handleRequestPermissions = useCallback(async () => {
+    const pending = [];
+    if (cameraPermission?.granted !== true) {
+      pending.push(requestCameraPermission());
+    }
+    if (microphonePermission?.granted !== true && requestMicrophonePermission) {
+      pending.push(requestMicrophonePermission());
+    }
+    if (!pending.length) return;
+
+    setRequestingPermissions(true);
+    try {
+      const results = await Promise.allSettled(pending);
+      results.forEach((result) => {
+        if (result.status === "rejected") {
+          console.warn("[VideoRecorder] permission request failed", result.reason);
+        }
+      });
+    } finally {
+      setRequestingPermissions(false);
+    }
+  }, [
+    cameraPermission?.granted,
+    requestCameraPermission,
+    microphonePermission?.granted,
+    requestMicrophonePermission,
+  ]);
+
+  useEffect(() => {
+    if (
+      !requestingPermissions &&
+      (cameraPermission?.status === "undetermined" ||
+        microphonePermission?.status === "undetermined")
+    ) {
+      handleRequestPermissions();
+    }
+  }, [
+    cameraPermission?.status,
+    microphonePermission?.status,
+    requestingPermissions,
+    handleRequestPermissions,
+  ]);
+
   useEffect(() => {
     let mounted = true;
 
-    (async () => {
-      if (!cameraPermission?.granted) await requestCameraPermission();
-      if (!microphonePermission?.granted && requestMicrophonePermission)
-        await requestMicrophonePermission();
-
+    const prepareOrientation = async () => {
       try {
         await allowRotation();
         const deviceOrientation = await ScreenOrientation.getOrientationAsync();
@@ -80,7 +132,9 @@ export default function VideoRecorderScreen() {
       } catch (e) {
         if (__DEV__) console.warn("[VideoRecorder] init orientation failed", e?.message || e);
       }
-    })();
+    };
+
+    prepareOrientation();
 
     const subscription = ScreenOrientation.addOrientationChangeListener(({ orientationInfo }) => {
       if (
@@ -108,13 +162,11 @@ export default function VideoRecorderScreen() {
       ScreenOrientation.lockAsync(OrientationLock.PORTRAIT).catch(() => {});
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [
-    allowRotation,
-    cameraPermission?.granted,
-    microphonePermission?.granted,
-    requestCameraPermission,
-    requestMicrophonePermission,
-  ]);
+  }, [allowRotation]);
+
+  useEffect(() => {
+    setCameraReady(false);
+  }, [facing]);
 
   const startTimer = () => {
     setSeconds(0);
@@ -195,17 +247,54 @@ export default function VideoRecorderScreen() {
     }
   };
 
-  if (cameraPermission == null) {
+  const waitingForPermissions =
+    cameraPermission == null || microphonePermission == null;
+
+  if (waitingForPermissions || requestingPermissions) {
     return (
       <View style={styles.center}>
-        <Text>Requesting permissions...</Text>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={[styles.statusText, styles.statusTextFirst]}>
+          {requestingPermissions ? "Requesting permissions..." : "Checking permissions..."}
+        </Text>
       </View>
     );
   }
-  if (!cameraPermission.granted) {
+
+  const missingCamera = cameraPermission?.granted === false;
+  const missingMicrophone = microphonePermission?.granted === false;
+  const blockedCamera = missingCamera && cameraPermission?.canAskAgain === false;
+  const blockedMicrophone =
+    missingMicrophone && microphonePermission?.canAskAgain === false;
+  const blocked = blockedCamera || blockedMicrophone;
+
+  if (missingCamera || missingMicrophone) {
     return (
       <View style={styles.center}>
-        <Text>No access to camera/microphone</Text>
+        <Text style={[styles.statusText, styles.statusTextFirst]}>
+          We need camera
+          {missingMicrophone ? " and microphone" : ""} access to record video.
+        </Text>
+        {!blocked && (
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => {
+              if (!requestingPermissions) {
+                handleRequestPermissions();
+              }
+            }}
+            disabled={requestingPermissions}
+          >
+            <Text style={styles.primaryButtonLabel}>
+              {requestingPermissions ? "Requesting..." : "Grant Access"}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {blocked && (
+          <Text style={styles.statusHint}>
+            Enable permissions from your system settings to continue.
+          </Text>
+        )}
       </View>
     );
   }
@@ -214,6 +303,8 @@ export default function VideoRecorderScreen() {
   const ss = String(seconds % 60).padStart(2, "0");
 
   const onPinchEvent = ({ nativeEvent }) => {
+    if (!cameraReady) return;
+
     if (nativeEvent.state === State.BEGAN) {
       setBaseZoom(zoom);
     } else if (nativeEvent.state === State.ACTIVE) {
@@ -228,16 +319,25 @@ export default function VideoRecorderScreen() {
         onHandlerStateChange={onPinchEvent}
         onGestureEvent={onPinchEvent}
       >
-        <View style={{ flex: 1 }}>
+        <View style={styles.cameraContainer}>
           <CameraView
             ref={cameraRef}
             style={styles.camera}
             facing={facing}
             mode="video"
             zoom={zoom}
+            mute={mute}
             enableTorch={torch && facing === "back"}
             videoQuality="720p"
+            videoStabilizationMode="auto"
+            onCameraReady={() => setCameraReady(true)}
           />
+          {!cameraReady && (
+            <View style={styles.previewOverlay} pointerEvents="none">
+              <ActivityIndicator size="large" color="#fff" />
+              <Text style={styles.statusText}>Starting camera...</Text>
+            </View>
+          )}
         </View>
       </PinchGestureHandler>
       <View style={styles.overlay}>
@@ -300,6 +400,7 @@ export default function VideoRecorderScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
+  cameraContainer: { flex: 1 },
   camera: { flex: 1 },
   overlay: {
     position: "absolute",
@@ -348,11 +449,51 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   toggleText: { color: "#fff", fontWeight: "700" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  center: {
+    flex: 1,
+    backgroundColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  statusText: {
+    color: "#fff",
+    textAlign: "center",
+    paddingHorizontal: 24,
+    marginTop: 16,
+  },
+  statusTextFirst: {
+    marginTop: 0,
+  },
+  statusHint: {
+    color: "#fff",
+    opacity: 0.8,
+    textAlign: "center",
+    marginTop: 16,
+    paddingHorizontal: 24,
+    fontSize: 13,
+  },
+  primaryButton: {
+    marginTop: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: "#1e88e5",
+  },
+  primaryButtonLabel: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  previewOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
-
-
-
-
-
 
