@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import * as MediaLibrary from "expo-media-library";
 import * as ImagePicker from "expo-image-picker";
+import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 export default function MediaPickerSheet({
@@ -27,6 +28,7 @@ export default function MediaPickerSheet({
   const [cursor, setCursor] = useState(null);
   const [selected, setSelected] = useState([]); // uris
   const isVideo = mode === "video";
+  const navigation = useNavigation();
 
   const load = useCallback(
     async (after = null) => {
@@ -67,37 +69,28 @@ export default function MediaPickerSheet({
   };
 
   const cameraAction = async () => {
+    console.log("Camera button pressed — navigating to CameraCapture");
     try {
       if (isVideo) {
         onClose?.();
         onRecordVideo?.();
         return;
       }
+      // close the picker and go to custom camera screen
+      onClose?.();
+      console.log("Camera button pressed — navigating to CameraCapture");
 
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission needed",
-          "Camera access is required to take photos."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        cameraFacing: ImagePicker.CameraType.back,
-        allowsEditing: false,
-        quality: 1,
-        exif: true,
-      });
-
-      if (!result.canceled) {
-        onAdd?.([result.assets[0].uri]);
-        onClose?.();
-      }
+      setTimeout(() => {
+        navigation.navigate("CameraCapture", {
+          onCapture: (uri) => {
+            if (uri) {
+              onAdd?.([uri]);
+            }
+          },
+        });
+      }, 300);
     } catch (err) {
-      console.error("Camera error:", err);
-      Alert.alert("Camera error", err?.message || "Unable to open camera.");
+      console.error("Camera action error:", err);
     }
   };
 
@@ -108,22 +101,28 @@ export default function MediaPickerSheet({
   };
 
   const renderItem = ({ item, index }) => {
-    if (index === 0) {
+    if (item.type === "camera") {
       return (
         <TouchableOpacity
           style={[styles.tile, { backgroundColor: theme?.card }]}
-          onPress={cameraAction}
+          onPress={() => {
+            console.log("Camera tile pressed");
+            cameraAction();
+          }}
         >
           <Ionicons
             name={isVideo ? "videocam" : "camera"}
             size={32}
             color={theme?.text || "#fff"}
           />
+          <Text style={{ color: "red" }}>Camera</Text>
         </TouchableOpacity>
       );
     }
     const asset = assets[index - 1];
+    if (!asset) return null;
     const uri = asset?.uri;
+    if (!uri) return null;
     const picked = selected.includes(uri);
     return (
       <TouchableOpacity style={styles.tile} onPress={() => toggle(uri)}>
@@ -145,11 +144,21 @@ export default function MediaPickerSheet({
     );
   };
 
-  const data = [{ key: "camera" }, ...assets];
+  const data = [{ id: "camera-button", type: "camera" }, ...assets];
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.wrap, { backgroundColor: theme?.background }]}>
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent={true}
+      statusBarTranslucent={true}
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+    >
+      <View
+        style={[styles.wrap, { backgroundColor: "rgba(0,0,0,0.85)" }]}
+        pointerEvents="box-none"
+      >
         <View style={[styles.header, { borderBottomColor: theme?.border }]}>
           <Text style={[styles.title, { color: theme?.text }]}>
             {isVideo ? "Select Video" : "Select Photos"}
@@ -162,7 +171,7 @@ export default function MediaPickerSheet({
           data={data}
           numColumns={3}
           renderItem={renderItem}
-          keyExtractor={(item, idx) => String(item.id || item.key || idx)}
+          keyExtractor={(item) => String(item.id || item.uri)}
           contentContainerStyle={{ padding: 8 }}
           onEndReached={() => cursor && load(cursor)}
           onEndReachedThreshold={0.4}

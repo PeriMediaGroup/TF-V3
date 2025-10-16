@@ -22,6 +22,7 @@ import VideoRecorderScreen from "../screens/VideoRecorderScreen";
 import TermsScreen from "../screens/TermsScreen";
 import AdminDashboardScreen from "../screens/AdminDashboard";
 import FooterTabBar from "../components/ui/FooterTabBar";
+import CameraCaptureScreen from "../screens/CameraCaptureScreen";
 
 import { useTheme } from "../styles/ThemeContext";
 import { Colors, Fonts } from "../styles/GlobalStyles";
@@ -116,6 +117,7 @@ function CreateStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CreateHome" component={CreatePostScreen} />
       <Stack.Screen name="VideoRecorder" component={VideoRecorderScreen} />
+      <Stack.Screen name="CameraCapture" component={CameraCaptureScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }

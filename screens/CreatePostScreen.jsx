@@ -1003,7 +1003,7 @@ ${description}`);
             }
           }
         }}
-        onRecordVideo={() => navigation.navigate('VideoRecorder')}
+        onRecordVideo={() => navigation.navigate('CameraCapture')}
       />
       <GiphyPickerSheet
         visible={giphyVisible}
