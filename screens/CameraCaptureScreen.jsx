@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
-import {
-  CameraView,
-  useCameraPermissions,
-} from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { logPermissionEvent } from "../utils/analytics";
 
 const FLASH_SEQUENCE = ["off", "on", "auto"];
 const FLASH_ICON = {
@@ -26,8 +24,9 @@ export default function CameraCaptureScreen() {
 
   const cameraRef = useRef(null);
   const orientationRef = useRef(Orientation.PORTRAIT_UP);
+  const lastPermissionSnapshotRef = useRef(null);
 
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermissionAsync] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
   const [requestingPermission, setRequestingPermission] = useState(false);
   const [facing, setFacing] = useState(initialFacing);
@@ -38,11 +37,40 @@ export default function CameraCaptureScreen() {
 
   const { top, bottom } = useSafeAreaInsets();
 
+  const requestCameraPermission = useCallback(
+    async (reason) => {
+      if (typeof requestPermissionAsync !== "function") return null;
+      logPermissionEvent("camera", "request_start", {
+        screen: "CameraCapture",
+        reason,
+      });
+      try {
+        const result = await requestPermissionAsync();
+        logPermissionEvent("camera", "request_result", {
+          screen: "CameraCapture",
+          reason,
+          status: result?.status ?? null,
+          granted: Boolean(result?.granted),
+          canAskAgain: Boolean(result?.canAskAgain),
+        });
+        return result;
+      } catch (error) {
+        logPermissionEvent("camera", "request_error", {
+          screen: "CameraCapture",
+          reason,
+          message: error?.message || String(error),
+        });
+        throw error;
+      }
+    },
+    [requestPermissionAsync]
+  );
+
   useEffect(() => {
     let cancelled = false;
     if (permission?.status === "undetermined" && !requestingPermission) {
       setRequestingPermission(true);
-      requestPermission()
+      requestCameraPermission("initial-check")
         .catch((error) => console.warn("Camera permission request failed", error))
         .finally(() => {
           if (!cancelled) setRequestingPermission(false);
@@ -51,7 +79,20 @@ export default function CameraCaptureScreen() {
     return () => {
       cancelled = true;
     };
-  }, [permission?.status, requestPermission, requestingPermission]);
+  }, [permission?.status, requestCameraPermission, requestingPermission]);
+
+  useEffect(() => {
+    if (!permission) return;
+    const snapshotKey = `${permission.status}-${permission.granted}-${permission.canAskAgain}`;
+    if (lastPermissionSnapshotRef.current === snapshotKey) return;
+    lastPermissionSnapshotRef.current = snapshotKey;
+    logPermissionEvent("camera", "snapshot", {
+      screen: "CameraCapture",
+      status: permission.status ?? null,
+      granted: Boolean(permission.granted),
+      canAskAgain: Boolean(permission.canAskAgain),
+    });
+  }, [permission]);
 
   useEffect(() => {
     if (facing === "front" && flash !== "off") {
@@ -176,7 +217,7 @@ export default function CameraCaptureScreen() {
             onPress={() => {
               if (!requestingPermission) {
                 setRequestingPermission(true);
-                requestPermission()
+                requestCameraPermission("cta-button")
                   .catch((error) =>
                     console.warn("Camera permission request failed", error)
                   )

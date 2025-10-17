@@ -15,6 +15,7 @@ import {
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import { logPermissionEvent } from "../utils/analytics";
 
 const MAX_SECONDS = 90;
 const { Orientation, OrientationLock } = ScreenOrientation;
@@ -23,12 +24,14 @@ export default function VideoRecorderScreen() {
   const navigation = useNavigation();
   const cameraRef = useRef(null);
   const orientationRef = useRef(Orientation.PORTRAIT_UP);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const lastCameraPermissionSnapshotRef = useRef(null);
+  const lastMicroPermissionSnapshotRef = useRef(null);
+  const [cameraPermission, requestCameraPermissionAsync] = useCameraPermissions();
   const micPermissionsHook =
     typeof useMicrophonePermissions === "function"
       ? useMicrophonePermissions()
       : [{ granted: true }, async () => true];
-  const [microphonePermission, requestMicrophonePermission] = micPermissionsHook;
+  const [microphonePermission, requestMicrophonePermissionAsync] = micPermissionsHook;
   const [recording, setRecording] = useState(false);
   const [facing, setFacing] = useState("back"); // 'back' | 'front'
   const [seconds, setSeconds] = useState(0);
@@ -39,6 +42,64 @@ export default function VideoRecorderScreen() {
   const [cameraReady, setCameraReady] = useState(false);
   const [requestingPermissions, setRequestingPermissions] = useState(false);
   const timerRef = useRef(null);
+
+  const requestCameraWithLogging = useCallback(
+    async (reason) => {
+      if (typeof requestCameraPermissionAsync !== "function") return null;
+      logPermissionEvent("camera", "request_start", {
+        screen: "VideoRecorder",
+        reason,
+      });
+      try {
+        const result = await requestCameraPermissionAsync();
+        logPermissionEvent("camera", "request_result", {
+          screen: "VideoRecorder",
+          reason,
+          status: result?.status ?? null,
+          granted: Boolean(result?.granted),
+          canAskAgain: Boolean(result?.canAskAgain),
+        });
+        return result;
+      } catch (error) {
+        logPermissionEvent("camera", "request_error", {
+          screen: "VideoRecorder",
+          reason,
+          message: error?.message || String(error),
+        });
+        throw error;
+      }
+    },
+    [requestCameraPermissionAsync]
+  );
+
+  const requestMicrophoneWithLogging = useCallback(
+    async (reason) => {
+      if (typeof requestMicrophonePermissionAsync !== "function") return null;
+      logPermissionEvent("microphone", "request_start", {
+        screen: "VideoRecorder",
+        reason,
+      });
+      try {
+        const result = await requestMicrophonePermissionAsync();
+        logPermissionEvent("microphone", "request_result", {
+          screen: "VideoRecorder",
+          reason,
+          status: result?.status ?? null,
+          granted: Boolean(result?.granted),
+          canAskAgain: Boolean(result?.canAskAgain),
+        });
+        return result;
+      } catch (error) {
+        logPermissionEvent("microphone", "request_error", {
+          screen: "VideoRecorder",
+          reason,
+          message: error?.message || String(error),
+        });
+        throw error;
+      }
+    },
+    [requestMicrophonePermissionAsync]
+  );
 
   const allowRotation = useCallback(async () => {
     try {
@@ -72,33 +133,37 @@ export default function VideoRecorderScreen() {
     []
   );
 
-  const handleRequestPermissions = useCallback(async () => {
-    const pending = [];
-    if (cameraPermission?.granted !== true) {
-      pending.push(requestCameraPermission());
-    }
-    if (microphonePermission?.granted !== true && requestMicrophonePermission) {
-      pending.push(requestMicrophonePermission());
-    }
-    if (!pending.length) return;
+  const handleRequestPermissions = useCallback(
+    async (reason = "auto") => {
+      const pending = [];
+      if (cameraPermission?.granted !== true) {
+        pending.push(requestCameraWithLogging(reason));
+      }
+      if (microphonePermission?.granted !== true && requestMicrophonePermissionAsync) {
+        pending.push(requestMicrophoneWithLogging(reason));
+      }
+      if (!pending.length) return;
 
-    setRequestingPermissions(true);
-    try {
-      const results = await Promise.allSettled(pending);
-      results.forEach((result) => {
-        if (result.status === "rejected") {
-          console.warn("[VideoRecorder] permission request failed", result.reason);
-        }
-      });
-    } finally {
-      setRequestingPermissions(false);
-    }
-  }, [
-    cameraPermission?.granted,
-    requestCameraPermission,
-    microphonePermission?.granted,
-    requestMicrophonePermission,
-  ]);
+      setRequestingPermissions(true);
+      try {
+        const results = await Promise.allSettled(pending);
+        results.forEach((result) => {
+          if (result.status === "rejected") {
+            console.warn("[VideoRecorder] permission request failed", result.reason);
+          }
+        });
+      } finally {
+        setRequestingPermissions(false);
+      }
+    },
+    [
+      cameraPermission?.granted,
+      microphonePermission?.granted,
+      requestCameraWithLogging,
+      requestMicrophonePermissionAsync,
+      requestMicrophoneWithLogging,
+    ]
+  );
 
   useEffect(() => {
     if (
@@ -106,7 +171,7 @@ export default function VideoRecorderScreen() {
       (cameraPermission?.status === "undetermined" ||
         microphonePermission?.status === "undetermined")
     ) {
-      handleRequestPermissions();
+      handleRequestPermissions("auto-init");
     }
   }, [
     cameraPermission?.status,
@@ -114,6 +179,32 @@ export default function VideoRecorderScreen() {
     requestingPermissions,
     handleRequestPermissions,
   ]);
+
+  useEffect(() => {
+    if (!cameraPermission) return;
+    const snapshotKey = `${cameraPermission.status}-${cameraPermission.granted}-${cameraPermission.canAskAgain}`;
+    if (lastCameraPermissionSnapshotRef.current === snapshotKey) return;
+    lastCameraPermissionSnapshotRef.current = snapshotKey;
+    logPermissionEvent("camera", "snapshot", {
+      screen: "VideoRecorder",
+      status: cameraPermission.status ?? null,
+      granted: Boolean(cameraPermission.granted),
+      canAskAgain: Boolean(cameraPermission.canAskAgain),
+    });
+  }, [cameraPermission]);
+
+  useEffect(() => {
+    if (!microphonePermission) return;
+    const snapshotKey = `${microphonePermission.status}-${microphonePermission.granted}-${microphonePermission.canAskAgain}`;
+    if (lastMicroPermissionSnapshotRef.current === snapshotKey) return;
+    lastMicroPermissionSnapshotRef.current = snapshotKey;
+    logPermissionEvent("microphone", "snapshot", {
+      screen: "VideoRecorder",
+      status: microphonePermission.status ?? null,
+      granted: Boolean(microphonePermission.granted),
+      canAskAgain: Boolean(microphonePermission.canAskAgain),
+    });
+  }, [microphonePermission]);
 
   useEffect(() => {
     let mounted = true;
@@ -280,7 +371,7 @@ export default function VideoRecorderScreen() {
             style={styles.primaryButton}
             onPress={() => {
               if (!requestingPermissions) {
-                handleRequestPermissions();
+                handleRequestPermissions("cta-button");
               }
             }}
             disabled={requestingPermissions}
@@ -496,4 +587,3 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
-
