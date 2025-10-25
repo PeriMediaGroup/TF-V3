@@ -1,6 +1,80 @@
 // utils/cloudinary.js
+// Centralised Cloudinary upload helpers with retry + progress support.
 
 let hasLoggedCloudinaryConfig = false;
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
+
+const DEFAULT_MAX_ATTEMPTS = parsePositiveInt(
+  process.env.EXPO_PUBLIC_UPLOAD_MAX_RETRIES,
+  3
+);
+const DEFAULT_RETRY_DELAY_MS = parsePositiveInt(
+  process.env.EXPO_PUBLIC_UPLOAD_RETRY_DELAY_MS,
+  800
+);
+
+const sleep = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+export class UploadError extends Error {
+  constructor(message, { attempt, label, cause } = {}) {
+    super(message);
+    this.name = "UploadError";
+    if (typeof attempt === "number") this.attempt = attempt;
+    if (label) this.label = label;
+    if (cause) this.cause = cause;
+  }
+}
+
+const withRetry = async (
+  task,
+  {
+    label = "Upload",
+    maxAttempts = DEFAULT_MAX_ATTEMPTS,
+    baseDelayMs = DEFAULT_RETRY_DELAY_MS,
+    onRetry,
+  } = {}
+) => {
+  let attempt = 0;
+  let lastError = null;
+
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    try {
+      return await task(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts) break;
+
+      if (typeof onRetry === "function") {
+        try {
+          onRetry(attempt, error);
+        } catch (callbackError) {
+          console.warn("[cloudinary] retry callback failed", callbackError);
+        }
+      }
+
+      const base =
+        typeof baseDelayMs === "function"
+          ? baseDelayMs(attempt, error)
+          : baseDelayMs * Math.pow(2, attempt - 1);
+      const delay = Math.max(50, Number(base) || DEFAULT_RETRY_DELAY_MS);
+      await sleep(delay + Math.floor(Math.random() * 150));
+    }
+  }
+
+  const message = lastError?.message
+    ? `${label} failed after ${maxAttempts} attempts: ${lastError.message}`
+    : `${label} failed after ${maxAttempts} attempts`;
+  throw new UploadError(message, { attempt: maxAttempts, label, cause: lastError });
+};
 
 const getCloudinaryConfig = () => {
   const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
@@ -29,67 +103,87 @@ const appendOptionalFields = (formData, { publicId, folder }) => {
 const buildEndpoint = (cloudName, type) =>
   `https://api.cloudinary.com/v1_1/${cloudName}/${type}/upload`;
 
-const uploadViaFetch = async (endpoint, formData, type) => {
-  const res = await fetch(endpoint, { method: "POST", body: formData });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error?.message || `Cloudinary ${type} upload failed`);
-  }
-  return data.secure_url;
-};
-
-export async function uploadImage(uri, publicId) {
-  const { cloudName, uploadPreset } = getCloudinaryConfig();
-  const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER; // optional
-
+const createFormDataFactory = ({
+  uri,
+  mimeType,
+  fileName,
+  uploadPreset,
+  publicId,
+  folder,
+}) => () => {
   const formData = new FormData();
   formData.append("file", {
     uri,
-    type: "image/jpeg",
-    name: "upload.jpg",
+    type: mimeType,
+    name: fileName,
   });
   formData.append("upload_preset", uploadPreset);
   appendOptionalFields(formData, { publicId, folder });
+  return formData;
+};
 
-  return uploadViaFetch(buildEndpoint(cloudName, "image"), formData, "image");
-}
+const performFetchUpload = async (endpoint, formData, resourceType) => {
+  const res = await fetch(endpoint, { method: "POST", body: formData });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (error) {
+    throw new Error(`Cloudinary ${resourceType} upload returned invalid JSON`);
+  }
 
-export async function uploadVideo(uri) {
-  const { cloudName, uploadPreset } = getCloudinaryConfig();
-  const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER; // optional
+  if (!res.ok) {
+    const message =
+      data?.error?.message || `Cloudinary ${resourceType} upload failed`;
+    throw new Error(message);
+  }
 
-  const formData = new FormData();
-  formData.append("file", {
-    uri,
-    type: "video/mp4",
-    name: "upload.mp4",
-  });
-  formData.append("upload_preset", uploadPreset);
-  appendOptionalFields(formData, { folder });
+  if (!data?.secure_url) {
+    throw new Error(`Cloudinary ${resourceType} upload missing secure_url`);
+  }
 
-  return uploadViaFetch(buildEndpoint(cloudName, "video"), formData, "video");
-}
+  return data.secure_url;
+};
 
-// Progress-enabled uploads using XMLHttpRequest
-const xhrUpload = (url, formData, onProgress) =>
+const performXhrUpload = (endpoint, formData, resourceType, onProgress) =>
   new Promise((resolve, reject) => {
     try {
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", url);
+      xhr.open("POST", endpoint);
       xhr.onload = () => {
         try {
           const json = JSON.parse(xhr.responseText || "{}");
-          if (xhr.status >= 200 && xhr.status < 300) resolve(json);
-          else reject(new Error(json?.error?.message || `Upload failed (${xhr.status})`));
-        } catch (e) {
-          reject(new Error("Invalid response from Cloudinary"));
+          if (xhr.status >= 200 && xhr.status < 300) {
+            if (!json?.secure_url) {
+              reject(
+                new Error(
+                  `Cloudinary ${resourceType} upload missing secure_url`
+                )
+              );
+              return;
+            }
+            resolve(json.secure_url);
+          } else {
+            reject(
+              new Error(
+                json?.error?.message ||
+                  `Cloudinary ${resourceType} upload failed (${xhr.status})`
+              )
+            );
+          }
+        } catch (parseError) {
+          reject(
+            new Error(
+              `Cloudinary ${resourceType} upload returned invalid JSON response`
+            )
+          );
         }
       };
-      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.onerror = () =>
+        reject(new Error(`Network error during ${resourceType} upload`));
       if (xhr.upload && typeof onProgress === "function") {
-        xhr.upload.onprogress = (e) => {
-          if (!e.lengthComputable) return;
-          const pct = Math.round((e.loaded / e.total) * 100);
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const pct = Math.round((event.loaded / event.total) * 100);
           onProgress(pct);
         };
       }
@@ -99,28 +193,138 @@ const xhrUpload = (url, formData, onProgress) =>
     }
   });
 
-export async function uploadImageWithProgress(uri, onProgress, publicId) {
+const uploadWithStrategy = async ({
+  endpoint,
+  resourceType,
+  formDataFactory,
+  strategy = "fetch",
+  onProgress,
+  maxAttempts,
+}) =>
+  withRetry(
+    async (attempt) => {
+      if (attempt > 1 && typeof onProgress === "function") {
+        onProgress(0);
+      }
+
+      const formData = formDataFactory();
+
+      if (strategy === "xhr") {
+        return performXhrUpload(endpoint, formData, resourceType, onProgress);
+      }
+
+      return performFetchUpload(endpoint, formData, resourceType);
+    },
+    {
+      label: `Cloudinary ${resourceType} upload`,
+      maxAttempts,
+      onRetry: (attempt, error) => {
+        console.warn(
+          `[cloudinary] retrying ${resourceType} upload after attempt ${attempt} failed:`,
+          error?.message || error
+        );
+      },
+    }
+  );
+
+export async function uploadImage(uri, publicId, options = {}) {
   const { cloudName, uploadPreset } = getCloudinaryConfig();
   const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER;
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
 
-  const formData = new FormData();
-  formData.append("file", { uri, type: "image/jpeg", name: "upload.jpg" });
-  formData.append("upload_preset", uploadPreset);
-  appendOptionalFields(formData, { publicId, folder });
+  const formDataFactory = createFormDataFactory({
+    uri,
+    mimeType: "image/jpeg",
+    fileName: "upload.jpg",
+    uploadPreset,
+    publicId,
+    folder,
+  });
 
-  const res = await xhrUpload(buildEndpoint(cloudName, "image"), formData, onProgress);
-  return res.secure_url;
+  return uploadWithStrategy({
+    endpoint: buildEndpoint(cloudName, "image"),
+    resourceType: "image",
+    formDataFactory,
+    strategy: "fetch",
+    maxAttempts,
+  });
 }
 
-export async function uploadVideoWithProgress(uri, onProgress) {
+export async function uploadVideo(uri, options = {}) {
   const { cloudName, uploadPreset } = getCloudinaryConfig();
   const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER;
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
 
-  const formData = new FormData();
-  formData.append("file", { uri, type: "video/mp4", name: "upload.mp4" });
-  formData.append("upload_preset", uploadPreset);
-  appendOptionalFields(formData, { folder });
+  const formDataFactory = createFormDataFactory({
+    uri,
+    mimeType: "video/mp4",
+    fileName: "upload.mp4",
+    uploadPreset,
+    folder,
+  });
 
-  const res = await xhrUpload(buildEndpoint(cloudName, "video"), formData, onProgress);
-  return res.secure_url;
+  return uploadWithStrategy({
+    endpoint: buildEndpoint(cloudName, "video"),
+    resourceType: "video",
+    formDataFactory,
+    strategy: "fetch",
+    maxAttempts,
+  });
 }
+
+export async function uploadImageWithProgress(
+  uri,
+  onProgress,
+  publicId,
+  options = {}
+) {
+  const { cloudName, uploadPreset } = getCloudinaryConfig();
+  const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER;
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+
+  const formDataFactory = createFormDataFactory({
+    uri,
+    mimeType: "image/jpeg",
+    fileName: "upload.jpg",
+    uploadPreset,
+    publicId,
+    folder,
+  });
+
+  return uploadWithStrategy({
+    endpoint: buildEndpoint(cloudName, "image"),
+    resourceType: "image",
+    formDataFactory,
+    strategy: "xhr",
+    onProgress,
+    maxAttempts,
+  });
+}
+
+export async function uploadVideoWithProgress(
+  uri,
+  onProgress,
+  options = {}
+) {
+  const { cloudName, uploadPreset } = getCloudinaryConfig();
+  const folder = process.env.EXPO_PUBLIC_CLOUDINARY_FOLDER;
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+
+  const formDataFactory = createFormDataFactory({
+    uri,
+    mimeType: "video/mp4",
+    fileName: "upload.mp4",
+    uploadPreset,
+    folder,
+  });
+
+  return uploadWithStrategy({
+    endpoint: buildEndpoint(cloudName, "video"),
+    resourceType: "video",
+    formDataFactory,
+    strategy: "xhr",
+    onProgress,
+    maxAttempts,
+  });
+}
+
