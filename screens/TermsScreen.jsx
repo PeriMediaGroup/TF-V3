@@ -82,16 +82,40 @@ export default function TermsScreen() {
 
         <Text style={styles.sectionTitle}>Privacy</Text>
         <Text style={styles.text}>
-          We value your privacy. We don’t sell your data. Ever.
-          We collect what we need to make the app work (like your email),
-          and that's it. You may see some adds but that's how we keep the lights
-          on.
+          We value your privacy. We don’t sell your data. Ever. We collect what
+          we need to make the app work (like your email), and that's it. You may
+          see some adds but that's how we keep the lights on.
         </Text>
 
         <Text style={styles.sectionTitle}>Termination</Text>
         <Text style={styles.text}>
           We reserve the right to suspend or terminate accounts that violate
           these Terms or engage in harmful activities.
+        </Text>
+
+        <Text style={styles.sectionTitle}>User-Initiated Account Deletion</Text>
+        <Text style={styles.text}>
+          If you choose to delete your account, all personal information tied to
+          your profile—such as your name, email, city, state, and any other
+          identifying data—is permanently removed or anonymized. Your posts,
+          comments, and other public contributions remain visible to preserve
+          the flow of community discussions, but they will appear under a
+          generic “Deleted User” label.
+        </Text>
+
+        <Text style={styles.sectionTitle}>Account Suspension or Ban</Text>
+        <Text style={styles.text}>
+          If a user account is banned or suspended for violating community
+          rules, the account is immediately deactivated and access to posting,
+          commenting, or messaging is revoked. The user’s existing posts and
+          comments may remain visible to preserve discussion continuity but will
+          appear under a “Banned User” label.
+        </Text>
+        <Text style={styles.text}>
+          Personal information is retained internally only as required for
+          security and moderation review. It is not publicly visible. Depending
+          on the severity of the violation, the account may later be anonymized
+          or permanently removed from the system.
         </Text>
 
         <Text style={styles.sectionTitle}>Have fun</Text>

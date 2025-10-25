@@ -10,24 +10,32 @@ import {
   Platform,
 } from "react-native";
 
+const VISIBILITY_OPTIONS = [
+  { key: "public", label: "Public" },
+  { key: "friends", label: "Friends Only" },
+];
+
 export default function EditPostModal({
   visible,
   onClose,
   initialTitle,
   initialDescription,
+  initialVisibility = "public",
   onSave,
 }) {
   const [title, setTitle] = useState(initialTitle || "");
   const [description, setDescription] = useState(initialDescription || "");
+  const [visibility, setVisibility] = useState(initialVisibility || "public");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setTitle(initialTitle || "");
       setDescription(initialDescription || "");
+      setVisibility(initialVisibility || "public");
       setSaving(false);
     }
-  }, [visible, initialTitle, initialDescription]);
+  }, [visible, initialTitle, initialDescription, initialVisibility]);
 
   const handleSubmit = async () => {
     const trimmedTitle = title.trim();
@@ -41,6 +49,7 @@ export default function EditPostModal({
       await onSave?.({
         title: trimmedTitle,
         description: trimmedDescription,
+        visibility,
       });
       onClose?.();
     } catch (err) {
@@ -82,6 +91,33 @@ export default function EditPostModal({
             placeholderTextColor="#666"
             multiline
           />
+
+          <Text style={styles.label}>Visibility</Text>
+          <View style={styles.visibilityRow}>
+            {VISIBILITY_OPTIONS.map((option) => {
+              const selected = visibility === option.key;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[
+                    styles.visibilityOption,
+                    selected && styles.visibilityOptionActive,
+                  ]}
+                  onPress={() => setVisibility(option.key)}
+                  disabled={saving}
+                >
+                  <Text
+                    style={[
+                      styles.visibilityLabel,
+                      selected && styles.visibilityLabelActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           <View style={styles.actions}>
             <TouchableOpacity
@@ -169,5 +205,30 @@ const styles = StyleSheet.create({
   saveText: {
     color: "#fff",
     fontWeight: "700",
+  },
+  visibilityRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+  },
+  visibilityOption: {
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#555",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: "#252525",
+  },
+  visibilityOptionActive: {
+    backgroundColor: "#3b3b3b",
+    borderColor: "#fff",
+  },
+  visibilityLabel: {
+    color: "#ccc",
+    fontWeight: "600",
+  },
+  visibilityLabelActive: {
+    color: "#fff",
   },
 });

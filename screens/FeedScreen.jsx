@@ -280,6 +280,51 @@ export default function FeedScreen() {
     setPosts((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
+  const isPostVisibleInFilter = useCallback(
+    (postData) => {
+      if (!postData) return false;
+      if (filter === "main") {
+        return postData.visibility === "public";
+      }
+      if (filter === "friends") {
+        if (postData.visibility !== "friends") return false;
+        if (!user?.id) return false;
+        const isFriend = friendIdList.some((id) => String(id) === String(postData.user_id));
+        return isFriend || String(postData.user_id) === String(user.id);
+      }
+      if (filter === "trending") {
+        if (postData.visibility === "public") return true;
+        if (postData.visibility === "friends") {
+          if (!user?.id) return false;
+          const isFriend = friendIdList.some((id) => String(id) === String(postData.user_id));
+          return isFriend || String(postData.user_id) === String(user.id);
+        }
+        return false;
+      }
+      return true;
+    },
+    [filter, friendIdList, user?.id]
+  );
+
+  const handlePostUpdated = useCallback(
+    (updatedPost) => {
+      if (!updatedPost?.id) return;
+      setPosts((prev) => {
+        const idx = prev.findIndex((p) => p.id === updatedPost.id);
+        if (idx === -1) return prev;
+        if (!isPostVisibleInFilter(updatedPost)) {
+          const next = [...prev];
+          next.splice(idx, 1);
+          return next;
+        }
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...updatedPost };
+        return next;
+      });
+    },
+    [isPostVisibleInFilter]
+  );
+
   const onSelectFilter = (next) => {
     if (filter === next) return;
     setFilter(next);
@@ -369,7 +414,7 @@ export default function FeedScreen() {
           data={posts}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
-            <PostCard post={item} user={user} onDeleted={handleRemovePost} />
+            <PostCard post={item} user={user} onDeleted={handleRemovePost} onUpdated={handlePostUpdated} />
           )}
           keyExtractor={(item, idx) => (item?.id ?? `post-${idx}`).toString()}
           contentContainerStyle={styles.list}

@@ -20,6 +20,7 @@ import { hasYoutubeLink, extractYoutubeId } from "../../utils/linkifyText";
 import AdminActionMenu from "./AdminActionMenu";
 import ReasonModal from "../common/ReasonModal";
 import FlagPostModal from "./FlagPostModal";
+import EditPostModal from "./EditPostModal";
 import PollModule from "../polls/PollModule";
 import usePoll from "../../hooks/usePoll";
 dayjs.extend(relativeTime);
@@ -279,10 +280,11 @@ function extractMediaUrls(post) {
   return urls;
 }
 
-export default function PostCard({ post, user, onDeleted }) {
+export default function PostCard({ post: initialPost, user, onDeleted, onUpdated }) {
   const { theme } = useTheme();
   const { profile: myProfile, isElevated: ctxElevated } = useAuth();
   const navigation = useNavigation();
+  const [post, setPost] = useState(initialPost);
   const [commentCount, setCommentCount] = useState(0);
   const [showComments, setShowComments] = useState(false);
   const isElevated = !!ctxElevated || (myProfile?.role && ['admin','ceo'].includes(String(myProfile.role).toLowerCase())) || !!(myProfile?.is_admin || myProfile?.is_ceo);
@@ -291,6 +293,11 @@ export default function PostCard({ post, user, onDeleted }) {
   const [adminMenuVisible, setAdminMenuVisible] = useState(false);
   const [reasonVisible, setReasonVisible] = useState(false);
   const [flagVisible, setFlagVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+
+  useEffect(() => {
+    setPost(initialPost);
+  }, [initialPost]);
   const pollRelation = Array.isArray(post?.polls_app) ? post.polls_app : null;
   const pollPreview = pollRelation && pollRelation.length > 0 ? pollRelation[0] : null;
   const shouldFetchPollByPost =
@@ -306,6 +313,31 @@ export default function PostCard({ post, user, onDeleted }) {
     userId: user?.id || null,
   });
   const pollDisabled = !user?.id;
+
+  const handleSaveEdit = useCallback(
+    async ({ title, description, visibility }) => {
+      if (!post?.id) throw new Error("Missing post");
+      if (!isOwner || !user?.id) throw new Error("Only the owner can edit this post");
+      const nextVisibility =
+        visibility === "friends" || visibility === "public" ? visibility : post?.visibility;
+      const updates = { title, description, visibility: nextVisibility };
+      const { error } = await supabase
+        .from("posts")
+        .update(updates)
+        .eq("id", post.id)
+        .eq("user_id", user.id);
+      if (error) throw error;
+      const nextPost = { ...post, ...updates };
+      setPost(nextPost);
+      try {
+        onUpdated?.(nextPost);
+      } catch (err) {
+        console.error("onUpdated handler failed:", err?.message || err);
+      }
+      showToast("Post updated");
+    },
+    [isOwner, onUpdated, post, user?.id]
+  );
 
   const handlePollVote = useCallback(
     async (optionId) => {
@@ -537,24 +569,40 @@ export default function PostCard({ post, user, onDeleted }) {
       {/* Footer: Votes + Comments */}
       <View style={styles.footerRow}>
         <VoteButtons postId={post.id} userId={user?.id} />
-        <TouchableOpacity onPress={() => setShowComments((v) => !v)}>
-          <Text style={[styles.commentCount, { color: theme.muted }]}> 
-            💬 {commentCount}
-          </Text>
-        </TouchableOpacity>
-        {isOwner ? (
-          <TouchableOpacity onPress={handleDeletePost}>
-            <Text style={[styles.commentCount, { color: 'red' }]}>🗑</Text>
+        <View style={styles.footerActions}>
+          <TouchableOpacity onPress={() => setShowComments((v) => !v)} style={styles.actionButton}>
+            <Text style={[styles.commentCount, { color: theme.muted }]}>
+              💬 {commentCount}
+            </Text>
           </TouchableOpacity>
-        ) : (
-          !!user && (
-            <TouchableOpacity onPress={() => setFlagVisible(true)} accessibilityLabel="Report post" style={{ paddingHorizontal: 6, paddingVertical: 4 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="flag-outline" size={18} color={theme.muted} />
-            </TouchableOpacity>
-          )
-        )}
+          {isOwner ? (
+            <>
+              <TouchableOpacity
+                onPress={() => setEditVisible(true)}
+                accessibilityLabel="Edit post"
+                style={styles.iconButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="create-outline" size={18} color={theme.muted} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDeletePost} style={styles.actionButton}>
+                <Text style={[styles.commentCount, { color: "red" }]}>🗑</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            !!user && (
+              <TouchableOpacity
+                onPress={() => setFlagVisible(true)}
+                accessibilityLabel="Report post"
+                style={styles.iconButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="flag-outline" size={18} color={theme.muted} />
+              </TouchableOpacity>
+            )
+          )}
+        </View>
       </View>
-
       {showComments && (
         <CommentsSection
           postId={post.id}
@@ -588,6 +636,14 @@ export default function PostCard({ post, user, onDeleted }) {
             showToast('Reported');
           } catch (e) { console.error('flag post:', e.message); showToast('Report failed'); }
         }}
+      />
+      <EditPostModal
+        visible={editVisible}
+        onClose={() => setEditVisible(false)}
+        initialTitle={post?.title || ""}
+        initialDescription={post?.description || ""}
+        initialVisibility={post?.visibility || "public"}
+        onSave={handleSaveEdit}
       />
     </View>
   );
@@ -643,9 +699,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  footerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  actionButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  iconButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginLeft: 8,
+  },
   debugPill: { position: 'absolute', left: 8, top: 8, backgroundColor: '#333c', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
   debugText: { color: '#fff', fontSize: 10 },
 });
+
 
 
 
