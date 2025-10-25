@@ -129,7 +129,9 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => {
         const focusedRoute = getFocusedRouteNameFromRoute(route) ?? "CreateHome";
-        const hideTabBar = route.name === "Create" && focusedRoute === "VideoRecorder";
+        const hideTabBar =
+          route.name === "Create" &&
+          (focusedRoute === "VideoRecorder" || focusedRoute === "CameraCapture");
         return {
           headerShown: false,
           tabBarStyle: hideTabBar ? { display: "none" } : undefined,

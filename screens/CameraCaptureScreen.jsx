@@ -106,34 +106,37 @@ export default function CameraCaptureScreen() {
 
   useEffect(() => {
     setCameraReady(false);
-    let active = true;
-    const applyLock = async () => {
-      try {
-        if (orientationMode === "portrait") {
-          await ScreenOrientation.lockAsync(OrientationLock.PORTRAIT);
-          if (active) setRatio("4:3");
-        } else {
-          await ScreenOrientation.lockAsync(OrientationLock.LANDSCAPE);
-          if (active) setRatio("16:9");
-        }
-      } catch (error) {
-        if (__DEV__) console.warn("[CameraCapture] orientation lock failed", error);
-      }
-    };
-    applyLock();
-
-    return () => {
-      active = false;
-    };
+    setRatio(orientationMode === "portrait" ? "4:3" : "16:9");
   }, [orientationMode]);
 
   useEffect(() => {
+    let active = true;
+
+    const updateForOrientation = (orientation) => {
+      const mode =
+        orientation === Orientation.LANDSCAPE_LEFT ||
+        orientation === Orientation.LANDSCAPE_RIGHT
+          ? "landscape"
+          : "portrait";
+      if (!active) return;
+      setOrientationMode((prev) => (prev === mode ? prev : mode));
+    };
+
+    (async () => {
+      try {
+        await ScreenOrientation.lockAsync(OrientationLock.DEFAULT);
+      } catch (error) {
+        if (__DEV__) console.warn("[CameraCapture] allow rotation failed", error);
+      }
+    })();
+
     const subscription = ScreenOrientation.addOrientationChangeListener(({ orientationInfo }) => {
       if (
         orientationInfo?.orientation != null &&
         orientationInfo.orientation !== Orientation.UNKNOWN
       ) {
         orientationRef.current = orientationInfo.orientation;
+        updateForOrientation(orientationInfo.orientation);
       }
     });
 
@@ -141,11 +144,13 @@ export default function CameraCaptureScreen() {
       .then((currentOrientation) => {
         if (typeof currentOrientation === "number" && currentOrientation !== Orientation.UNKNOWN) {
           orientationRef.current = currentOrientation;
+          updateForOrientation(currentOrientation);
         }
       })
       .catch(() => {});
 
     return () => {
+      active = false;
       ScreenOrientation.removeOrientationChangeListener(subscription);
       ScreenOrientation.lockAsync(OrientationLock.PORTRAIT).catch(() => {});
     };
@@ -160,10 +165,6 @@ export default function CameraCaptureScreen() {
 
   const handleToggleFacing = useCallback(() => {
     setFacing((prev) => (prev === "back" ? "front" : "back"));
-  }, []);
-
-  const handleToggleOrientation = useCallback(() => {
-    setOrientationMode((prev) => (prev === "portrait" ? "landscape" : "portrait"));
   }, []);
 
   const handleTakePhoto = useCallback(async () => {
@@ -264,71 +265,109 @@ export default function CameraCaptureScreen() {
         </View>
       )}
 
-      <View style={[styles.topOverlay, { paddingTop: top + 12 }]}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.roundButton}
+      {orientationMode === "portrait" ? (
+        <View style={[styles.topOverlay, { paddingTop: top + 12 }]}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.roundButton}
+          >
+            <Ionicons name="close" size={26} color="#fff" />
+          </TouchableOpacity>
+
+          <View style={styles.topControls}>
+            <TouchableOpacity
+              style={[
+                styles.optionButton,
+                facing === "front" && styles.optionButtonDisabled,
+              ]}
+              onPress={handleToggleFlash}
+              disabled={facing === "front"}
+            >
+              <Ionicons
+                name={flashIcon}
+                size={22}
+                color="#fff"
+                style={{ marginBottom: 2 }}
+              />
+              <Text style={styles.optionLabel}>Flash {flashLabel}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.optionButton} onPress={handleToggleFacing}>
+              <Ionicons name="camera-reverse" size={24} color="#fff" style={{ marginBottom: 2 }} />
+              <Text style={styles.optionLabel}>
+                {facing === "back" ? "Front" : "Rear"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.floatingClose, { top: top + 12, left: 20 }]}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          <View style={[styles.landscapeSideControls, { top: top + 80, left: 20 }]}>
+            <TouchableOpacity
+              style={[styles.sideButton, facing === "front" && styles.optionButtonDisabled]}
+              onPress={handleToggleFlash}
+              disabled={facing === "front"}
+            >
+              <Ionicons name={flashIcon} size={20} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sideButton} onPress={handleToggleFacing}>
+              <Ionicons name="camera-reverse" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {orientationMode === "portrait" ? (
+        <View style={[styles.bottomOverlay, { paddingBottom: bottom + 28 }]}>
+          <View style={styles.shutterOuter}>
+            <TouchableOpacity
+              style={[
+                styles.shutterButton,
+                capturing && styles.shutterButtonDisabled,
+              ]}
+              onPress={handleTakePhoto}
+              disabled={capturing}
+            >
+              {capturing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <View style={styles.shutterInner} />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.landscapeShutterContainer,
+            { right: 24, bottom: bottom + 24 },
+          ]}
         >
-          <Ionicons name="close" size={26} color="#fff" />
-        </TouchableOpacity>
-
-        <View style={styles.topControls}>
-          <TouchableOpacity
-            style={[
-              styles.optionButton,
-              facing === "front" && styles.optionButtonDisabled,
-            ]}
-            onPress={handleToggleFlash}
-            disabled={facing === "front"}
-          >
-            <Ionicons
-              name={flashIcon}
-              size={22}
-              color="#fff"
-              style={{ marginBottom: 2 }}
-            />
-            <Text style={styles.optionLabel}>Flash {flashLabel}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.optionButton} onPress={handleToggleOrientation}>
-            <Ionicons
-              name={orientationMode === "portrait" ? "phone-landscape" : "phone-portrait"}
-              size={22}
-              color="#fff"
-              style={{ marginBottom: 2 }}
-            />
-            <Text style={styles.optionLabel}>
-              {orientationMode === "portrait" ? "Landscape" : "Portrait"}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.optionButton} onPress={handleToggleFacing}>
-            <Ionicons name="camera-reverse" size={24} color="#fff" style={{ marginBottom: 2 }} />
-            <Text style={styles.optionLabel}>
-              {facing === "back" ? "Front" : "Rear"}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.shutterOuter}>
+            <TouchableOpacity
+              style={[
+                styles.shutterButton,
+                capturing && styles.shutterButtonDisabled,
+              ]}
+              onPress={handleTakePhoto}
+              disabled={capturing}
+            >
+              {capturing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <View style={styles.shutterInner} />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-
-      <View style={[styles.bottomOverlay, { paddingBottom: bottom + 28 }]}>
-        <View style={styles.shutterOuter}>
-          <TouchableOpacity
-            style={[
-              styles.shutterButton,
-              capturing && styles.shutterButtonDisabled,
-            ]}
-            onPress={handleTakePhoto}
-            disabled={capturing}
-          >
-            {capturing ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <View style={styles.shutterInner} />
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -391,6 +430,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
+    zIndex: 5,
   },
   roundButton: {
     width: 42,
@@ -422,6 +462,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  floatingClose: {
+    position: "absolute",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 5,
+  },
+  landscapeSideControls: {
+    position: "absolute",
+    flexDirection: "column",
+    gap: 14,
+    alignItems: "center",
+    zIndex: 5,
+  },
+  sideButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   bottomOverlay: {
     position: "absolute",
     bottom: 0,
@@ -429,6 +494,7 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
     paddingTop: 16,
+    zIndex: 5,
   },
   shutterOuter: {
     width: 88,
@@ -455,5 +521,11 @@ const styles = StyleSheet.create({
     height: 62,
     borderRadius: 31,
     backgroundColor: "#e53935",
+  },
+  landscapeShutterContainer: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 5,
   },
 });
