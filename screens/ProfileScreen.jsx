@@ -38,6 +38,7 @@ export default function ProfileScreen({ navigation: navigationProp }) {
           "profile_image_url, username, about, email, first_name, last_name, city, state, rank, top_guns, top_friends, created_at"
         )
         .eq("id", user.id)
+        .eq("is_deleted", false)
         .single();
 
       if (error) throw error;
@@ -89,14 +90,22 @@ export default function ProfileScreen({ navigation: navigationProp }) {
       nestedScrollEnabled={true} // 👈 add this
       keyboardDismissMode="on-drag"
     >
-      <Image
-        source={
-          profile?.profile_image_url
-            ? { uri: profile.profile_image_url }
-            : require("../assets/images/default-avatar.png")
-        }
-        style={styles.avatar}
-      />
+      <View
+        style={[
+          styles.avatarWrap,
+          { borderColor: theme.border, backgroundColor: theme.card },
+        ]}
+      >
+        <Image
+          source={
+            profile?.profile_image_url
+              ? { uri: profile.profile_image_url }
+              : require("../assets/images/default-avatar.png")
+          }
+          style={styles.avatar}
+          resizeMode="cover"
+        />
+      </View>
       <Text style={[styles.title, { color: theme.text }]}>
         {profile.username || "No username"}
       </Text>
@@ -198,6 +207,17 @@ const styles = StyleSheet.create({
   info: { fontSize: 16, marginBottom: 8, textAlign: "center" },
   meta: { fontSize: 14, color: "#666", marginBottom: 6 },
   button: { marginTop: 10, width: "60%" },
+  avatarWrap: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+    alignSelf: "center",
+  },
   statsRow: {
     width: "100%",
     marginBottom: 16,
@@ -213,5 +233,9 @@ const styles = StyleSheet.create({
   statText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  avatar: {
+    width: "100%",
+    height: "100%",
   },
 });

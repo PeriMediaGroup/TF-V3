@@ -78,6 +78,7 @@ export const AuthProvider = ({ children }) => {
           .from('profiles')
           .select('id, username, email, role, rank, city, state, dob, joined_at, about, profile_image_url, banner_url, privacy_settings, badges, is_muted, is_banned, top_friends, top_guns')
           .eq('id', user.id)
+          .eq('is_deleted', false)
           .maybeSingle();
         if (!active) return;
         // If not found, fallback by email (optional)
@@ -87,6 +88,7 @@ export const AuthProvider = ({ children }) => {
             .from('profiles')
             .select('id, username, email, role, rank, city, state, dob, joined_at, about, profile_image_url, banner_url, privacy_settings, badges, is_muted, is_banned, top_friends, top_guns')
             .eq('email', user.email)
+            .eq('is_deleted', false)
             .maybeSingle();
           if (retry2.data) {
             source = 'email';

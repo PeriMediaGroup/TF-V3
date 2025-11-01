@@ -85,6 +85,7 @@ const MentionInputInner = (
           .from("profiles")
           .select("username")
           .ilike("username", `${trimmed}%`)
+          .eq("is_deleted", false)
           .limit(maxSuggestions);
         if (cancelled) return;
         if (error) {

@@ -49,7 +49,7 @@ export default function ForgotPassword({ initialEmail = "", onClose }) {
         Reset Password
       </Text>
       <Text style={[styles.helperText, { color: Colors.gray }]}>
-        Enter your account email and we'll send you a reset link.
+        Enter your account email and we&apos;ll send you a reset link.
       </Text>
       <TextInput
         style={[styles.input, { color: Colors.white }]}

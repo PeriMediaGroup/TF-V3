@@ -67,6 +67,7 @@ export default function PublicProfileScreen() {
       } else {
         throw new Error("No username or userId provided");
       }
+      query = query.eq("is_deleted", false);
       const { data, error } = await query.single();
 
       if (error) throw error;
@@ -194,17 +195,26 @@ export default function PublicProfileScreen() {
       style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={styles.container}
     >
-      {profile.profile_image_url ? (
-        <Image
-          source={{ uri: profile.profile_image_url }}
-          style={styles.avatar}
-        />
-      ) : (
-        <Image
-          source={require("../assets/images/default-avatar.png")}
-          style={styles.avatar}
-        />
-      )}
+      <View
+        style={[
+          styles.avatarWrap,
+          { borderColor: theme.border, backgroundColor: theme.card },
+        ]}
+      >
+        {profile.profile_image_url ? (
+          <Image
+            source={{ uri: profile.profile_image_url }}
+            style={styles.avatar}
+            resizeMode="cover"
+          />
+        ) : (
+          <Image
+            source={require("../assets/images/default-avatar.png")}
+            style={styles.avatar}
+            resizeMode="cover"
+          />
+        )}
+      </View>
 
       <Text style={[styles.title, { color: theme.text }]}> 
         {profile.username}
@@ -349,7 +359,20 @@ const styles = StyleSheet.create({
     marginVertical: 10,
     textAlign: "center",
   },
-  avatar: { width: 100, height: 100, borderRadius: 50, marginBottom: 12 },
+  avatarWrap: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  avatar: {
+    width: "100%",
+    height: "100%",
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "bold",

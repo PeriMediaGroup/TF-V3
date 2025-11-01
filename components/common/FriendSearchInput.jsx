@@ -33,6 +33,7 @@ export default function FriendSearchInput({ value, onChange, placeholder }) {
       .from("profiles")
       .select("id, username, profile_image_url")
       .ilike("username", `%${text}%`)
+      .eq("is_deleted", false)
       .limit(5);
     if (!error) setResults(data || []);
     setLoading(false);

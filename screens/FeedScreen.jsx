@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Text, View, StyleSheet, RefreshControl, TouchableOpacity } from "react-native";
+import { ActivityIndicator, FlatList, LogBox, Text, View, StyleSheet, TouchableOpacity } from "react-native";
 import { useRoute, useFocusEffect } from "@react-navigation/native";
 import supabase from "../supabase/client";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../styles/ThemeContext";
-import PostCard from "../components/posts/PostCard";
+import PostList from "../components/posts/PostList";
+import { arePostsStructurallyEqual } from "../components/posts/PostCard";
 import PostSkeleton from "../components/posts/PostSkeleton";
 
 const PAGE_SIZE = 10;
@@ -12,6 +13,83 @@ const FILTER_LABELS = {
   main: "Main",
   friends: "Friends",
   trending: "Trending",
+};
+
+const mergePostsPreservingIdentity = (previous = [], incoming = []) => {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return [];
+  }
+  const prevList = Array.isArray(previous) ? previous : [];
+  const prevMap = new Map();
+  prevList.forEach((post) => {
+    if (post?.id != null) {
+      prevMap.set(post.id, post);
+    }
+  });
+
+  let mutated = prevList.length !== incoming.length;
+  const next = incoming.map((post, idx) => {
+    const id = post?.id;
+    if (prevList[idx]?.id !== id) {
+      mutated = true;
+    }
+    if (id == null) {
+      mutated = true;
+      return post;
+    }
+    const existing = prevMap.get(id);
+    if (existing && arePostsStructurallyEqual(existing, post)) {
+      return existing;
+    }
+    mutated = true;
+    return post;
+  });
+
+  return mutated ? next : prevList;
+};
+
+const appendPostsPreservingIdentity = (previous = [], incoming = []) => {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return previous;
+  }
+  const prevList = Array.isArray(previous) ? previous : [];
+  const result = prevList.slice();
+  const indexMap = new Map();
+  prevList.forEach((post, idx) => {
+    if (post?.id != null) {
+      indexMap.set(post.id, { post, idx });
+    }
+  });
+
+  const seenIds = new Set(indexMap.keys());
+  let mutated = false;
+
+  incoming.forEach((post) => {
+    const id = post?.id;
+    if (id == null) {
+      result.push(post);
+      mutated = true;
+      return;
+    }
+    const existing = indexMap.get(id);
+    if (!existing) {
+      if (!seenIds.has(id)) {
+        result.push(post);
+        const newIndex = result.length - 1;
+        indexMap.set(id, { post, idx: newIndex });
+        seenIds.add(id);
+        mutated = true;
+      }
+      return;
+    }
+    if (!arePostsStructurallyEqual(existing.post, post)) {
+      result[existing.idx] = post;
+      indexMap.set(id, { post, idx: existing.idx });
+      mutated = true;
+    }
+  });
+
+  return mutated ? result : previous;
 };
 
 export default function FeedScreen() {
@@ -29,6 +107,11 @@ export default function FeedScreen() {
   const [friendIds, setFriendIds] = useState([]);
   const [friendsLoaded, setFriendsLoaded] = useState(!user?.id);
   const listRef = useRef(null);
+  const memoizedUser = useMemo(() => (user?.id ? { id: user.id } : null), [user?.id]);
+
+  useEffect(() => {
+    LogBox.ignoreLogs(["VirtualizedList: You have a large list that is slow to update"]);
+  }, []);
 
   const filterOptions = useMemo(() => {
     if (user?.id) return ["main", "friends", "trending"];
@@ -212,7 +295,7 @@ export default function FeedScreen() {
     try {
       if (!refreshing) setLoading(true);
       const first = await fetchPage(0, filter);
-      setPosts(first);
+      setPosts((prev) => mergePostsPreservingIdentity(prev, first));
       setHasMore(first.length === PAGE_SIZE);
       setPage(1);
     } catch (err) {
@@ -276,6 +359,24 @@ export default function FeedScreen() {
     />
   );
 
+  const listFooter = useMemo(() => {
+    if (loadingMore) {
+      return (
+        <View style={styles.footer}>
+          <ActivityIndicator color={theme.primary} />
+        </View>
+      );
+    }
+    if (!hasMore && posts.length) {
+      return (
+        <View style={styles.footer}>
+          <Text style={[styles.meta, { color: theme.muted }]}>No more posts</Text>
+        </View>
+      );
+    }
+    return null;
+  }, [hasMore, loadingMore, posts.length, theme.muted, theme.primary]);
+
   const handleRemovePost = useCallback((id) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
   }, []);
@@ -317,8 +418,12 @@ export default function FeedScreen() {
           next.splice(idx, 1);
           return next;
         }
+        const merged = { ...prev[idx], ...updatedPost };
+        if (arePostsStructurallyEqual(prev[idx], merged)) {
+          return prev;
+        }
         const next = [...prev];
-        next[idx] = { ...next[idx], ...updatedPost };
+        next[idx] = merged;
         return next;
       });
     },
@@ -389,13 +494,8 @@ export default function FeedScreen() {
         setHasMore(false);
         return;
       }
-      // de-dup in case of race
-      setPosts((prev) => {
-        const seen = new Set(prev.map((p) => p.id));
-        const merged = [...prev];
-        for (const n of next) if (!seen.has(n.id)) merged.push(n);
-        return merged;
-      });
+      // de-dup and preserve referential equality where possible
+      setPosts((prev) => appendPostsPreservingIdentity(prev, next));
       setHasMore(next.length === PAGE_SIZE);
       setPage((prev) => prev + 1);
     } catch (e) {
@@ -409,38 +509,18 @@ export default function FeedScreen() {
     <View style={[styles.screen, { backgroundColor: theme.background }]}>
       {filterBar}
       {posts.length ? (
-        <FlatList
+        <PostList
           ref={listRef}
-          data={posts}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <PostCard post={item} user={user} onDeleted={handleRemovePost} onUpdated={handlePostUpdated} />
-          )}
-          keyExtractor={(item, idx) => (item?.id ?? `post-${idx}`).toString()}
-          contentContainerStyle={styles.list}
-          removeClippedSubviews
-          initialNumToRender={6}
-          windowSize={7}
+          posts={posts}
+          user={memoizedUser}
+          onDeleted={handleRemovePost}
+          onUpdated={handlePostUpdated}
           onEndReached={loadMore}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={
-            loadingMore ? (
-              <View style={styles.footer}>
-                <ActivityIndicator color="#B22222" />
-              </View>
-            ) : !hasMore ? (
-              <View style={styles.footer}>
-                <Text style={styles.meta}>No more posts</Text>
-              </View>
-            ) : null
-          }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#B22222"
-            />
-          }
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          footerComponent={listFooter}
+          contentContainerStyle={styles.list}
+          refreshTintColor={theme.primary}
         />
       ) : (
         <View style={styles.center}>

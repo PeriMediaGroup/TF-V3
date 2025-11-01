@@ -32,7 +32,8 @@ export const useMentionNotifier = () => {
       try {
         let query = supabase
           .from("profiles")
-          .select("id, username");
+          .select("id, username")
+          .eq("is_deleted", false);
 
         if (filterValues.length === 1) {
           query = query.ilike("username", filterValues[0]);

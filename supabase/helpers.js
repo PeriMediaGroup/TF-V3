@@ -20,7 +20,7 @@ export const signUp = async (email, password) => {
 
 export const logIn = async (email, password) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  console.log("Login response:", { data, error });
+  // console.log("Login response:", { data, error });
 
   if (error) {
     Alert.alert("Login Error", error.message);

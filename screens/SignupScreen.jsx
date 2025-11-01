@@ -57,6 +57,7 @@ export default function SignupScreen() {
         .from("profiles")
         .select("id")
         .eq("username", username)
+        .eq("is_deleted", false)
         .maybeSingle();
 
       if (checkError) throw checkError;
@@ -80,7 +81,8 @@ export default function SignupScreen() {
         const { error: updateError } = await supabase
           .from("profiles")
           .update({ username })
-          .eq("id", user.id);
+          .eq("id", user.id)
+          .eq("is_deleted", false);
 
         if (updateError) throw updateError;
       }
