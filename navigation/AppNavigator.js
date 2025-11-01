@@ -137,7 +137,7 @@ function MainTabs() {
           tabBarStyle: hideTabBar ? { display: "none" } : undefined,
           tabBarActiveTintColor: Colors.white,
           tabBarInactiveTintColor: theme.textMuted,
-          tabBarLabelStyle: { fontFamily: Fonts.body, fontSize: 12 },
+          tabBarLabelStyle: { fontFamily: Fonts.body, fontSize: 11 },
           tabBarHideOnKeyboard: true,
         };
       }}
@@ -168,6 +168,7 @@ function MainTabs() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),
+          tabBarButton: () => null,
         }}
       />
     </Tab.Navigator>

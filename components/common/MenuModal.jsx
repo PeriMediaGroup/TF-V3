@@ -1,29 +1,45 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-
+import { useNavigation } from "@react-navigation/native";
 
 import SideDrawer from "./SideDrawer";
 import { Colors } from "../../styles/GlobalStyles";
 import { useTheme } from "../../styles/ThemeContext";
 
-const MENU_LINKS = [
-  { label: "TriggerFeed Website", url: "https://triggerfeed.com" },
-  { label: "Merch Store", url: "https://triggerfeed.com/merch" },
-  { label: "About TriggerFeed", url: "https://triggerfeed.com/about" },
-  { label: "Contact", url: "https://triggerfeed.com/contact" },
-  { label: "Buy us a round", url: "https://buymeacoffee.com/triggerfeed" },
-  { label: "Privacy!", url: "https://triggerfeed.com/privacy" },
+const MENU_ITEMS = [
+  {
+    key: "profile",
+    label: "My Profile",
+    navigateTo: { name: "Profile", params: { screen: "ProfileHome" } },
+  },
+  { key: "site", label: "TriggerFeed Website", url: "https://triggerfeed.com" },
+  { key: "merch", label: "Merch Store", url: "https://triggerfeed.com/merch" },
+  { key: "about", label: "About TriggerFeed", url: "https://triggerfeed.com/about" },
+  { key: "contact", label: "Contact", url: "https://triggerfeed.com/contact" },
+  { key: "coffee", label: "Buy us a round", url: "https://buymeacoffee.com/triggerfeed" },
+  { key: "privacy", label: "Privacy!", url: "https://triggerfeed.com/privacy" },
 ];
 
 export default function MenuModal({ visible, onClose }) {
   const { theme } = useTheme();
+  const navigation = useNavigation();
 
-  const handlePress = async (url) => {
+  const handlePress = async (item) => {
+    if (item.navigateTo) {
+      onClose?.();
+      requestAnimationFrame(() => {
+        navigation.navigate(item.navigateTo.name, item.navigateTo.params);
+      });
+      return;
+    }
+
+    if (!item.url) return;
+
     try {
-      await Linking.openURL(url);
+      await Linking.openURL(item.url);
     } catch (e) {
-      console.warn("[MenuModal] failed to open url", url, e?.message);
+      console.warn("[MenuModal] failed to open url", item.url, e?.message);
     } finally {
       onClose?.();
     }
@@ -36,20 +52,29 @@ export default function MenuModal({ visible, onClose }) {
       title="Explore TriggerFeed"
       contentStyle={styles.content}
     >
-      {MENU_LINKS.map((item, index) => (
-        <TouchableOpacity
-          key={item.url}
-          style={[styles.linkRow, index === 0 && styles.firstRow]}
-          onPress={() => handlePress(item.url)}
-          accessibilityRole="link"
-          activeOpacity={0.85}
-        >
-          <View style={styles.linkTextWrap}>
-            <Text style={[styles.linkText, { color: Colors.crimson }]}>{item.label}</Text>
-          </View>
-          <Ionicons name="open-outline" size={18} color={theme.muted} />
-        </TouchableOpacity>
-      ))}
+      {MENU_ITEMS.map((item, index) => {
+        const isFirst = index === 0;
+        const isNavigate = !!item.navigateTo;
+        const textColor = isNavigate ? theme.text : Colors.crimson;
+        const trailingIcon = isNavigate ? "chevron-forward" : "open-outline";
+
+        return (
+          <TouchableOpacity
+            key={item.key}
+            style={[styles.linkRow, isFirst && styles.firstRow]}
+            onPress={() => handlePress(item)}
+            accessibilityRole={isNavigate ? "button" : "link"}
+            activeOpacity={0.85}
+          >
+            <View style={styles.linkTextWrap}>
+              <Text style={[styles.linkText, { color: textColor }]}>
+                {item.label}
+              </Text>
+            </View>
+            <Ionicons name={trailingIcon} size={18} color={theme.muted} />
+          </TouchableOpacity>
+        );
+      })}
     </SideDrawer>
   );
 }
@@ -62,7 +87,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "rgba(255,255,255,0.15)",
   },

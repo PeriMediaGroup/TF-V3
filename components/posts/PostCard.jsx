@@ -71,8 +71,9 @@ const getYouTubeId = (url) => {
 };
 
 const TF_ORIENTATION_PARAM = 'tf_orientation';
-
-
+const MEDIA_MAX_HEIGHT_RATIO = 0.75;
+const MEDIA_MAX_HEIGHT_ABSOLUTE = 960;
+const MEDIA_MAX_WIDTH_RATIO = 0.96;
 
 const parseOrientationFromUrl = (url) => {
 
@@ -159,30 +160,84 @@ const aspectForOrientation = (orientation, fallback = 16 / 9) => {
 
 
 
-const VideoItem = React.memo(function VideoItem({ url, ratio }) {
+const VideoItem = React.memo(function VideoItem({ url, ratio, mediaWidth }) {
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const [availableWidth, setAvailableWidth] = useState(mediaWidth ?? null);
   const orientation = parseOrientationFromUrl(url);
   const playbackUrl = orientation !== null ? stripOrientationParam(url) : url;
-  const player = useVideoPlayer({ uri: playbackUrl }, (p) => { p.loop = false; });
-  const containerAspect = aspectForOrientation(orientation, ratio || 16 / 9);
-  const videoStyle = { width: "100%", height: "100%" };
+  const player = useVideoPlayer({ uri: playbackUrl }, (p) => {
+    p.loop = false;
+  });
+  const rawAspect = aspectForOrientation(orientation, ratio || 16 / 9);
+  const containerAspect =
+    Number.isFinite(rawAspect) && rawAspect > 0 ? rawAspect : 16 / 9;
   const rotate = rotationForOrientation(orientation);
-  if (rotate !== '0deg') {
-    videoStyle.transform = [{ rotate }];
-  }
+  const maxHeight = Math.min(
+    viewportHeight * MEDIA_MAX_HEIGHT_RATIO,
+    MEDIA_MAX_HEIGHT_ABSOLUTE
+  );
+  const viewportMaxWidth = viewportWidth * MEDIA_MAX_WIDTH_RATIO;
+  useEffect(() => {
+    if (!mediaWidth) return;
+    setAvailableWidth((prev) => {
+      if (!prev) return mediaWidth;
+      if (Math.abs(prev - mediaWidth) < 1) return prev;
+      return mediaWidth;
+    });
+  }, [mediaWidth]);
+  const surfaceStyle = useMemo(() => {
+    const bounds = {
+      maxHeight,
+      maxWidth: viewportMaxWidth,
+    };
+    if (!availableWidth) {
+      return { ...bounds, width: "100%", aspectRatio: containerAspect };
+    }
+    let width = Math.min(availableWidth, viewportMaxWidth);
+    let height = width / containerAspect;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * containerAspect;
+    }
+    if (width > availableWidth) {
+      width = availableWidth;
+      height = width / containerAspect;
+    }
+    return { ...bounds, width, height };
+  }, [availableWidth, containerAspect, maxHeight, viewportMaxWidth]);
+  const videoStyle =
+    rotate === "0deg"
+      ? styles.video
+      : [styles.video, { transform: [{ rotate }] }];
+  const wrapperStyle = useMemo(() => {
+    if (typeof surfaceStyle.width === "number") {
+      return [styles.mediaItemWrapperTight, { width: surfaceStyle.width }];
+    }
+    return styles.mediaItemWrapperLoose;
+  }, [surfaceStyle.width]);
   return (
-    <View style={{ marginRight: 8, flex: 1 }}>
-      <View
-        style={{
-          width: "100%",
-          aspectRatio: containerAspect,
-          borderRadius: 8,
-          overflow: "hidden",
-          backgroundColor: "#000",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <VideoView player={player} style={videoStyle} nativeControls />
+    <View
+      style={wrapperStyle}
+      onLayout={(event) => {
+        if (mediaWidth) return;
+        const nextWidth = event?.nativeEvent?.layout?.width ?? 0;
+        if (
+          nextWidth > 0 &&
+          Math.abs(nextWidth - (availableWidth ?? 0)) > 0.5 &&
+          nextWidth >= (availableWidth ?? 0)
+        ) {
+          setAvailableWidth(nextWidth);
+        }
+      }}
+    >
+      <View style={[styles.videoSurface, surfaceStyle]}>
+        <VideoView
+          player={player}
+          style={videoStyle}
+          nativeControls
+          contentFit="cover"
+          resizeMode="contain"
+        />
       </View>
     </View>
   );
@@ -208,7 +263,7 @@ const YouTubeItem = React.memo(function YouTubeItem({ videoId, ratio = 16 / 9, a
 });
 
 
-const MediaItem = React.memo(function MediaItem({ url }) {
+const MediaItem = React.memo(function MediaItem({ url, mediaWidth }) {
   const [ratio, setRatio] = useState(1);
   const [ytPlaying, setYtPlaying] = useState(false);
   const isVideo = isVideoUrl(url);
@@ -250,7 +305,7 @@ const MediaItem = React.memo(function MediaItem({ url }) {
   }
 
   if (isVideo) {
-    return <VideoItem url={url} ratio={ratio} />;
+    return <VideoItem url={url} ratio={ratio} mediaWidth={mediaWidth} />;
   }
 
   return (
@@ -389,6 +444,7 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
   const [post, setPost] = useState(initialPost);
   const [commentCount, setCommentCount] = useState(0);
   const [showComments, setShowComments] = useState(false);
+  const [mediaWidth, setMediaWidth] = useState(null);
   const userId = user?.id ?? null;
   const sanitizedTitle = useMemo(() => sanitizeTextContent(post?.title), [post?.title]);
   const sanitizedDescription = useMemo(() => sanitizeTextContent(post?.description), [post?.description]);
@@ -397,19 +453,35 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
     if (!mediaUrls.length) return null;
     if (mediaUrls.length === 1) {
       return (
-        <View style={styles.mediaRow}>
-          <MediaItem key={`single-${post.id}`} url={mediaUrls[0]} />
+        <View
+          style={styles.mediaRow}
+          onLayout={(event) => {
+            const width = event?.nativeEvent?.layout?.width ?? 0;
+            if (!width) return;
+            setMediaWidth((prev) => (prev && Math.abs(prev - width) < 1 ? prev : width));
+          }}
+        >
+          <MediaItem key={`single-${post.id}`} url={mediaUrls[0]} mediaWidth={mediaWidth} />
         </View>
       );
     }
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.mediaRow}
+        onLayout={(event) => {
+          const width = event?.nativeEvent?.layout?.width ?? 0;
+          if (!width) return;
+          setMediaWidth((prev) => (prev && Math.abs(prev - width) < 1 ? prev : width));
+        }}
+      >
         {mediaUrls.map((u, idx) => (
-          <MediaItem key={`${post.id}-${idx}-${u}`} url={u} />
+          <MediaItem key={`${post.id}-${idx}-${u}`} url={u} mediaWidth={mediaWidth} />
         ))}
       </ScrollView>
     );
-  }, [mediaUrls, post?.id]);
+  }, [mediaUrls, mediaWidth, post?.id]);
   const relativeTimestamp = useMemo(() => {
     if (!post?.created_at) return "";
     return dayjs.utc(post.created_at).local().fromNow();
@@ -805,6 +877,31 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   mediaRow: { marginTop: 8, width: "100%" },
+  mediaItemWrapperLoose: {
+    marginRight: 8,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mediaItemWrapperTight: {
+    marginRight: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  videoSurface: {
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  video: {
+    width: "100%",
+    height: "100%",
+  },
   footerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -831,4 +928,3 @@ const styles = StyleSheet.create({
   debugPill: { position: 'absolute', left: 8, top: 8, backgroundColor: '#333c', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
   debugText: { color: '#fff', fontSize: 10 },
 });
-
