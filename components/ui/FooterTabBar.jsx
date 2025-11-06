@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../styles/ThemeContext";
 import { Colors, Fonts } from "../../styles/GlobalStyles";
 
+const HIDDEN_ROUTES = new Set(["Profile"]);
+
 export default function FooterTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -22,60 +24,58 @@ export default function FooterTabBar({ state, descriptors, navigation }) {
       style={[
         styles.container,
         {
-          paddingBottom: Math.max(insets.bottom || 0, 12),
+          paddingBottom: Math.max(insets.bottom || 0, 6),
         },
       ]}
     >
-      {state.routes.map((route, index) => {
-        const { options } = descriptors[route.key];
-        const label =
-          options.tabBarLabel !== undefined
-            ? options.tabBarLabel
-            : options.title !== undefined
-              ? options.title
-              : route.name;
+      {state.routes
+        .filter((route) => !HIDDEN_ROUTES.has(route.name))
+        .map((route) => {
+          const { options } = descriptors[route.key];
+          const label =
+            options.tabBarLabel !== undefined
+              ? options.tabBarLabel
+              : options.title !== undefined
+                ? options.title
+                : route.name;
 
-        const isFocused = state.index === index;
-        const tabBarLabelStyle = options.tabBarLabelStyle || {};
+          const routeIndex = state.routes.findIndex((entry) => entry.key === route.key);
+          const isFocused = state.index === routeIndex;
+          const tabBarLabelStyle = options.tabBarLabelStyle || {};
 
-        const activeTint = options.tabBarActiveTintColor || Colors.white;
-        const inactiveTint = options.tabBarInactiveTintColor || theme.textMuted;
-        const color = isFocused ? activeTint : inactiveTint;
+          const activeTint = options.tabBarActiveTintColor || Colors.white;
+          const inactiveTint = options.tabBarInactiveTintColor || theme.textMuted;
+          const color = isFocused ? activeTint : inactiveTint;
 
-        const icon =
-          typeof options.tabBarIcon === "function"
-            ? options.tabBarIcon({ focused: isFocused, color, size: isFocused ? 28 : 24 })
-            : null;
+          const icon =
+            typeof options.tabBarIcon === "function"
+              ? options.tabBarIcon({ focused: isFocused, color, size: isFocused ? 24 : 22 })
+              : null;
 
-        const onPress = () => {
-          const event = navigation.emit({
-            type: "tabPress",
-            target: route.key,
-            canPreventDefault: true,
-          });
+          const onPress = () => {
+            const event = navigation.emit({
+              type: "tabPress",
+              target: route.key,
+              canPreventDefault: true,
+            });
 
-          if (event.defaultPrevented) {
-            return;
-          }
+            if (event.defaultPrevented) {
+              return;
+            }
 
-          if (route.name === "Profile") {
-            navigation.navigate("Profile", { screen: "ProfileHome" });
-            return;
-          }
+            if (!isFocused) {
+              navigation.navigate(route.name);
+            }
+          };
 
-          if (!isFocused) {
-            navigation.navigate(route.name);
-          }
-        };
+          const onLongPress = () => {
+            navigation.emit({
+              type: "tabLongPress",
+              target: route.key,
+            });
+          };
 
-        const onLongPress = () => {
-          navigation.emit({
-            type: "tabLongPress",
-            target: route.key,
-          });
-        };
-
-        const badge = options.tabBarBadge;
+          const badge = options.tabBarBadge;
 
         return (
           <TouchableOpacity
@@ -112,37 +112,34 @@ export default function FooterTabBar({ state, descriptors, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
+    alignItems: "center",
     backgroundColor: Colors.gunmetal,
-    borderTopWidth: 1,
-    borderTopColor: "#444",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.15)",
     paddingHorizontal: 12,
-    paddingTop: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    elevation: 18,
+    paddingTop: 6,
   },
   tabButton: {
     flex: 1,
     marginHorizontal: 4,
-    borderRadius: 12,
-    backgroundColor: "#3a4347",
-    paddingVertical: 10,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
+    minHeight: 40,
   },
   tabButtonActive: {
     backgroundColor: Colors.crimson,
   },
   tabContent: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 48,
   },
   label: {
-    marginTop: 6,
-    fontSize: 12,
+    marginLeft: 6,
+    fontSize: 11,
     fontFamily: Fonts.body,
     color: Colors.white,
   },

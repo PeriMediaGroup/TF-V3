@@ -34,6 +34,7 @@ export default function EditProfileScreen({ navigation }) {
             "username, about, first_name, last_name, city, state, rank, top_guns, top_friends"
           )
           .eq("id", user.id)
+          .eq("is_deleted", false)
           .single();
         if (error) throw error;
         setProfile(data);
@@ -53,7 +54,8 @@ export default function EditProfileScreen({ navigation }) {
       const { error } = await supabase
         .from("profiles")
         .update(profile)
-        .eq("id", user.id);
+        .eq("id", user.id)
+        .eq("is_deleted", false);
       if (error) throw error;
       Alert.alert("Success", "Profile updated!");
       navigation.goBack();

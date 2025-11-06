@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
-  Alert,
   Modal,
   View,
   Text,
@@ -10,7 +9,6 @@ import {
   StyleSheet,
 } from "react-native";
 import * as MediaLibrary from "expo-media-library";
-import * as ImagePicker from "expo-image-picker";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -69,7 +67,6 @@ export default function MediaPickerSheet({
   };
 
   const cameraAction = async () => {
-    console.log("Camera button pressed — navigating to CameraCapture");
     try {
       if (isVideo) {
         onClose?.();
@@ -78,7 +75,6 @@ export default function MediaPickerSheet({
       }
       // close the picker and go to custom camera screen
       onClose?.();
-      console.log("Camera button pressed — navigating to CameraCapture");
 
       setTimeout(() => {
         navigation.navigate("CameraCapture", {
@@ -106,7 +102,6 @@ export default function MediaPickerSheet({
         <TouchableOpacity
           style={[styles.tile, { backgroundColor: theme?.card }]}
           onPress={() => {
-            console.log("Camera tile pressed");
             cameraAction();
           }}
         >
