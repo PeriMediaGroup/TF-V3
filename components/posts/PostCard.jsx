@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, Alert, useWindowDimensions } from "react-native";
+import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, Alert, useWindowDimensions, Modal, StatusBar, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import YoutubePlayer from "react-native-youtube-iframe";
 import { useNavigation } from "@react-navigation/native";
 import { VideoView, useVideoPlayer } from "expo-video";
 import * as ScreenOrientation from "expo-screen-orientation";
+import { GestureDetector, Gesture } from "react-native-gesture-handler";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useTheme } from "../../styles/ThemeContext";
 import { useAuth } from "../../auth/AuthContext";
 import { getCommentCount, sendModerationNotice, flagPost, recordPostDeletion } from "../../supabase/helpers";
@@ -74,6 +76,25 @@ const TF_ORIENTATION_PARAM = 'tf_orientation';
 const MEDIA_MAX_HEIGHT_RATIO = 0.75;
 const MEDIA_MAX_HEIGHT_ABSOLUTE = 960;
 const MEDIA_MAX_WIDTH_RATIO = 0.96;
+const IMAGE_ZOOM_MAX_SCALE = 4;
+const IMAGE_ZOOM_RESET_THRESHOLD = 1.02;
+const IMAGE_SWIPE_THRESHOLD = 80;
+const IMAGE_SWIPE_VELOCITY = 650;
+
+const clampTranslateWorklet = (value, bound) => {
+  "worklet";
+  if (bound <= 0) return 0;
+  if (value > bound) return bound;
+  if (value < -bound) return -bound;
+  return value;
+};
+
+const clampScaleWorklet = (value) => {
+  "worklet";
+  if (value < 1) return 1;
+  if (value > IMAGE_ZOOM_MAX_SCALE) return IMAGE_ZOOM_MAX_SCALE;
+  return value;
+};
 
 const parseOrientationFromUrl = (url) => {
 
@@ -263,7 +284,141 @@ const YouTubeItem = React.memo(function YouTubeItem({ videoId, ratio = 16 / 9, a
 });
 
 
-const MediaItem = React.memo(function MediaItem({ url, mediaWidth }) {
+const ZoomableImage = React.memo(function ZoomableImage({ uri, onSwipeLeft, onSwipeRight }) {
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+  const layoutWidth = useSharedValue(viewportWidth);
+  const layoutHeight = useSharedValue(viewportHeight);
+
+  useEffect(() => {
+    layoutWidth.value = viewportWidth;
+    layoutHeight.value = viewportHeight;
+  }, [layoutHeight, layoutWidth, viewportHeight, viewportWidth]);
+
+  useEffect(() => {
+    scale.value = withTiming(1, { duration: 150 });
+    savedScale.value = 1;
+    translateX.value = withTiming(0, { duration: 150 });
+    translateY.value = withTiming(0, { duration: 150 });
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
+  }, [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY, uri]);
+
+  const pinchGesture = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          savedScale.value = scale.value;
+        })
+        .onUpdate((event) => {
+          const next = clampScaleWorklet(savedScale.value * event.scale);
+          scale.value = next;
+        })
+        .onEnd(() => {
+          if (scale.value <= 1) {
+            scale.value = withTiming(1);
+            translateX.value = withTiming(0);
+            translateY.value = withTiming(0);
+            savedTranslateX.value = 0;
+            savedTranslateY.value = 0;
+            return;
+          }
+          const boundsX = Math.max(0, ((scale.value - 1) * layoutWidth.value) / 2);
+          const boundsY = Math.max(0, ((scale.value - 1) * layoutHeight.value) / 2);
+          translateX.value = withTiming(clampTranslateWorklet(translateX.value, boundsX));
+          translateY.value = withTiming(clampTranslateWorklet(translateY.value, boundsY));
+        }),
+    [layoutHeight, layoutWidth, savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY]
+  );
+
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(5)
+        .onStart(() => {
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+        })
+        .onUpdate((event) => {
+          if (scale.value > IMAGE_ZOOM_RESET_THRESHOLD) {
+            const boundsX = Math.max(0, ((scale.value - 1) * layoutWidth.value) / 2);
+            const boundsY = Math.max(0, ((scale.value - 1) * layoutHeight.value) / 2);
+            translateX.value = clampTranslateWorklet(savedTranslateX.value + event.translationX, boundsX);
+            translateY.value = clampTranslateWorklet(savedTranslateY.value + event.translationY, boundsY);
+          }
+        })
+        .onEnd((event) => {
+          if (scale.value <= IMAGE_ZOOM_RESET_THRESHOLD) {
+            const shouldGoNext =
+              typeof onSwipeLeft === "function" &&
+              event.translationX <= -IMAGE_SWIPE_THRESHOLD &&
+              Math.abs(event.velocityX) > IMAGE_SWIPE_VELOCITY;
+            const shouldGoPrev =
+              typeof onSwipeRight === "function" &&
+              event.translationX >= IMAGE_SWIPE_THRESHOLD &&
+              Math.abs(event.velocityX) > IMAGE_SWIPE_VELOCITY;
+            if (shouldGoNext) {
+              runOnJS(onSwipeLeft)();
+              return;
+            }
+            if (shouldGoPrev) {
+              runOnJS(onSwipeRight)();
+              return;
+            }
+            translateX.value = withTiming(0);
+            translateY.value = withTiming(0);
+            savedTranslateX.value = 0;
+            savedTranslateY.value = 0;
+            return;
+          }
+          const boundsX = Math.max(0, ((scale.value - 1) * layoutWidth.value) / 2);
+          const boundsY = Math.max(0, ((scale.value - 1) * layoutHeight.value) / 2);
+          translateX.value = withTiming(clampTranslateWorklet(translateX.value, boundsX));
+          translateY.value = withTiming(clampTranslateWorklet(translateY.value, boundsY));
+        }),
+    [layoutHeight, layoutWidth, onSwipeLeft, onSwipeRight, savedTranslateX, savedTranslateY, scale, translateX, translateY]
+  );
+
+  const gesture = useMemo(
+    () => Gesture.Simultaneous(pinchGesture, panGesture),
+    [panGesture, pinchGesture]
+  );
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  return (
+    <View
+      style={styles.viewerImageWrapper}
+      onLayout={(event) => {
+        const { width, height } = event?.nativeEvent?.layout ?? {};
+        if (width) layoutWidth.value = width;
+        if (height) layoutHeight.value = height;
+      }}
+    >
+      <GestureDetector gesture={gesture}>
+        <Animated.Image
+          source={{ uri }}
+          style={[styles.viewerImage, animatedStyle]}
+          resizeMode="contain"
+        />
+      </GestureDetector>
+    </View>
+  );
+});
+
+
+const MediaItem = React.memo(function MediaItem({ url, mediaWidth, onPress }) {
   const [ratio, setRatio] = useState(1);
   const [ytPlaying, setYtPlaying] = useState(false);
   const isVideo = isVideoUrl(url);
@@ -308,13 +463,25 @@ const MediaItem = React.memo(function MediaItem({ url, mediaWidth }) {
     return <VideoItem url={url} ratio={ratio} mediaWidth={mediaWidth} />;
   }
 
+  const image = (
+    <Image
+      source={{ uri: url }}
+      style={{ width: "100%", height: undefined, aspectRatio: ratio || 1, borderRadius: 8 }}
+      resizeMode="cover"
+    />
+  );
+
+  if (typeof onPress === "function") {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={{ marginRight: 8, flex: 1 }}>
+        {image}
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <View style={{ marginRight: 8, flex: 1 }}>
-      <Image
-        source={{ uri: url }}
-        style={{ width: "100%", height: undefined, aspectRatio: ratio || 1, borderRadius: 8 }}
-        resizeMode="cover"
-      />
+      {image}
     </View>
   );
 });
@@ -438,17 +605,54 @@ export const arePostsStructurallyEqual = (prevPost, nextPost) => {
 };
 
 function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { profile: myProfile, isElevated: ctxElevated } = useAuth();
   const navigation = useNavigation();
   const [post, setPost] = useState(initialPost);
   const [commentCount, setCommentCount] = useState(0);
   const [showComments, setShowComments] = useState(false);
   const [mediaWidth, setMediaWidth] = useState(null);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(null);
   const userId = user?.id ?? null;
   const sanitizedTitle = useMemo(() => sanitizeTextContent(post?.title), [post?.title]);
   const sanitizedDescription = useMemo(() => sanitizeTextContent(post?.description), [post?.description]);
   const mediaUrls = useMemo(() => extractMediaUrls(post), [post]);
+
+  const closeImageViewer = useCallback(() => {
+    setViewerVisible(false);
+    setViewerIndex(null);
+  }, []);
+
+  const openImageViewer = useCallback(
+    (index = 0) => {
+      if (!mediaUrls.length) return;
+      const safeIndex = Number.isFinite(index) ? Math.min(Math.max(index, 0), mediaUrls.length - 1) : 0;
+      setViewerIndex(safeIndex);
+      setViewerVisible(true);
+    },
+    [mediaUrls]
+  );
+
+  const showNextImage = useCallback(() => {
+    setViewerIndex((prev) => {
+      if (prev == null) return prev;
+      const total = mediaUrls.length;
+      if (!total) return null;
+      const next = Math.min(prev + 1, total - 1);
+      return next === prev ? prev : next;
+    });
+  }, [mediaUrls]);
+
+  const showPrevImage = useCallback(() => {
+    setViewerIndex((prev) => {
+      if (prev == null) return prev;
+      const total = mediaUrls.length;
+      if (!total) return null;
+      const next = Math.max(prev - 1, 0);
+      return next === prev ? prev : next;
+    });
+  }, [mediaUrls]);
   const mediaContent = useMemo(() => {
     if (!mediaUrls.length) return null;
     if (mediaUrls.length === 1) {
@@ -461,7 +665,7 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
             setMediaWidth((prev) => (prev && Math.abs(prev - width) < 1 ? prev : width));
           }}
         >
-          <MediaItem key={`single-${post.id}`} url={mediaUrls[0]} mediaWidth={mediaWidth} />
+          <MediaItem key={`single-${post.id}`} url={mediaUrls[0]} mediaWidth={mediaWidth} onPress={() => openImageViewer(0)} />
         </View>
       );
     }
@@ -477,11 +681,53 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
         }}
       >
         {mediaUrls.map((u, idx) => (
-          <MediaItem key={`${post.id}-${idx}-${u}`} url={u} mediaWidth={mediaWidth} />
+          <MediaItem key={`${post.id}-${idx}-${u}`} url={u} mediaWidth={mediaWidth} onPress={() => openImageViewer(idx)} />
         ))}
       </ScrollView>
     );
-  }, [mediaUrls, mediaWidth, post?.id]);
+  }, [mediaUrls, mediaWidth, openImageViewer, post?.id]);
+
+  const activeImageUrl = useMemo(() => {
+    if (viewerIndex == null) return null;
+    if (viewerIndex < 0 || viewerIndex >= mediaUrls.length) return null;
+    return mediaUrls[viewerIndex];
+  }, [mediaUrls, viewerIndex]);
+
+  useEffect(() => {
+    if (!viewerVisible) return;
+    if (!activeImageUrl) {
+      closeImageViewer();
+    }
+  }, [activeImageUrl, closeImageViewer, viewerVisible]);
+
+  const modalVisible = viewerVisible && !!activeImageUrl;
+  const hasMultipleImages = mediaUrls.length > 1;
+  const canGoPrev = hasMultipleImages && viewerIndex != null && viewerIndex > 0;
+  const canGoNext = hasMultipleImages && viewerIndex != null && viewerIndex < mediaUrls.length - 1;
+  const viewerCounterLabel =
+    hasMultipleImages && viewerIndex != null ? `${viewerIndex + 1} / ${mediaUrls.length}` : null;
+
+  useEffect(() => {
+    const baseStyle = isDark ? "light-content" : "dark-content";
+    const baseBackground = theme?.background || (isDark ? "#000000" : "#FFFFFF");
+    if (modalVisible) {
+      StatusBar.setBarStyle("light-content", true);
+      if (Platform.OS === "android") {
+        StatusBar.setBackgroundColor("#000000");
+      }
+    } else {
+      StatusBar.setBarStyle(baseStyle, true);
+      if (Platform.OS === "android") {
+        StatusBar.setBackgroundColor(baseBackground);
+      }
+    }
+    return () => {
+      StatusBar.setBarStyle(baseStyle, true);
+      if (Platform.OS === "android") {
+        StatusBar.setBackgroundColor(baseBackground);
+      }
+    };
+  }, [isDark, modalVisible, theme?.background]);
   const relativeTimestamp = useMemo(() => {
     if (!post?.created_at) return "";
     return dayjs.utc(post.created_at).local().fromNow();
@@ -784,6 +1030,60 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
           onCommentCountChange={setCommentCount}
         />
       )}
+      <Modal
+        visible={modalVisible}
+        animationType="fade"
+        transparent={false}
+        presentationStyle="fullScreen"
+        onRequestClose={closeImageViewer}
+      >
+        <View style={styles.viewerBackdrop}>
+          {activeImageUrl ? (
+            <ZoomableImage
+              key={activeImageUrl}
+              uri={activeImageUrl}
+              onSwipeLeft={canGoNext ? showNextImage : undefined}
+              onSwipeRight={canGoPrev ? showPrevImage : undefined}
+            />
+          ) : null}
+          <TouchableOpacity
+            style={styles.viewerCloseButton}
+            onPress={closeImageViewer}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Close image viewer"
+          >
+            <Ionicons name="close" size={26} color="#fff" />
+          </TouchableOpacity>
+          {canGoPrev ? (
+            <TouchableOpacity
+              style={[styles.viewerNavButton, styles.viewerNavButtonLeft]}
+              onPress={showPrevImage}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Show previous image"
+            >
+              <Ionicons name="chevron-back" size={32} color="#fff" />
+            </TouchableOpacity>
+          ) : null}
+          {canGoNext ? (
+            <TouchableOpacity
+              style={[styles.viewerNavButton, styles.viewerNavButtonRight]}
+              onPress={showNextImage}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Show next image"
+            >
+              <Ionicons name="chevron-forward" size={32} color="#fff" />
+            </TouchableOpacity>
+          ) : null}
+          {viewerCounterLabel ? (
+            <View style={styles.viewerCounter}>
+              <Text style={styles.viewerCounterText}>{viewerCounterLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
       <AdminActionMenu
         visible={adminMenuVisible}
         onClose={() => setAdminMenuVisible(false)}
@@ -927,4 +1227,60 @@ const styles = StyleSheet.create({
   },
   debugPill: { position: 'absolute', left: 8, top: 8, backgroundColor: '#333c', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
   debugText: { color: '#fff', fontSize: 10 },
+  viewerBackdrop: {
+    flex: 1,
+    backgroundColor: "#000",
+    paddingTop: 32,
+    paddingBottom: 24,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewerImageWrapper: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewerImage: {
+    width: "100%",
+    height: "100%",
+  },
+  viewerCloseButton: {
+    position: "absolute",
+    top: 36,
+    right: 20,
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: "#00000088",
+  },
+  viewerNavButton: {
+    position: "absolute",
+    top: "50%",
+    marginTop: -28,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 24,
+    backgroundColor: "#00000080",
+  },
+  viewerNavButtonLeft: {
+    left: 20,
+  },
+  viewerNavButtonRight: {
+    right: 20,
+  },
+  viewerCounter: {
+    position: "absolute",
+    bottom: 36,
+    alignSelf: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#00000080",
+  },
+  viewerCounterText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 });
