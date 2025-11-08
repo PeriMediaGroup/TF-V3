@@ -16,6 +16,8 @@ import { useAuth } from "../auth/AuthContext";
 import supabase from "../supabase/client";
 import { useTheme } from "../styles/ThemeContext";
 import { fetchProfileStats } from "../supabase/helpers";
+import ScreenHeader from "../components/common/ScreenHeader";
+import CreatePostFab from "../components/common/CreatePostFab";
 
 dayjs.extend(utc);
 
@@ -83,13 +85,15 @@ export default function ProfileScreen({ navigation: navigationProp }) {
     : null;
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: theme.background }}
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView
+        style={{ flex: 1 }}
       contentContainerStyle={[styles.container, { paddingBottom: 80 }]}
       keyboardShouldPersistTaps="handled"
-      nestedScrollEnabled={true} // 👈 add this
+      nestedScrollEnabled={true} 
       keyboardDismissMode="on-drag"
     >
+      <ScreenHeader title="Profile" />
       <View
         style={[
           styles.avatarWrap,
@@ -141,37 +145,43 @@ export default function ProfileScreen({ navigation: navigationProp }) {
         </View>
       </View>
 
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>
-        Top 5 Guns
-      </Text>
-      {profile.top_guns?.length ? (
-        profile.top_guns.map((gun, i) => (
-          <Text key={i} style={[styles.meta, { color: theme.text }]}>
-            {i + 1}. {gun}
-          </Text>
-        ))
-      ) : (
-        <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
-      )}
-
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>
-        Top 5 Friends
-      </Text>
-      {profile.top_friends?.length ? (
-        profile.top_friends.map((friend, i) => (
-          <Text
-            key={i}
-            style={[styles.meta, { color: theme.primary }]}
-            onPress={() =>
-              navigation.navigate("PublicProfile", { username: friend })
-            }
-          >
-            {i + 1}. {friend}
-          </Text>
-        ))
-      ) : (
-        <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
-      )}
+      <View style={[styles.topFiveSection, { borderColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          The Top Five
+        </Text>
+        <View style={styles.topFiveColumns}>
+          <View style={styles.topFiveColumn}>
+            <Text style={[styles.topFiveSubheading, { color: theme.muted }]}>Guns</Text>
+            {profile.top_guns?.length ? (
+              profile.top_guns.map((gun, i) => (
+                <Text key={i} style={[styles.meta, { color: theme.text }]}>
+                  {i + 1}. {gun}
+                </Text>
+              ))
+            ) : (
+              <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
+            )}
+          </View>
+          <View style={styles.topFiveColumn}>
+            <Text style={[styles.topFiveSubheading, { color: theme.muted }]}>Friends</Text>
+            {profile.top_friends?.length ? (
+              profile.top_friends.map((friend, i) => (
+                <Text
+                  key={i}
+                  style={[styles.meta, { color: theme.primary }]}
+                  onPress={() =>
+                    navigation.navigate("PublicProfile", { username: friend })
+                  }
+                >
+                  {i + 1}. {friend}
+                </Text>
+              ))
+            ) : (
+              <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
+            )}
+          </View>
+        </View>
+      </View>
 
       <View style={styles.button}>
         <Button
@@ -194,7 +204,9 @@ export default function ProfileScreen({ navigation: navigationProp }) {
           onPress={() => navigation.navigate("Settings")}
         />
       </View>
-    </ScrollView>
+      </ScrollView>
+      <CreatePostFab />
+    </View>
   );
 }
 
@@ -233,6 +245,27 @@ const styles = StyleSheet.create({
   statText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  topFiveSection: {
+    width: "100%",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 16,
+  },
+  topFiveColumns: {
+    flexDirection: "row",
+    columnGap: 16,
+    marginTop: 8,
+  },
+  topFiveColumn: {
+    flex: 1,
+  },
+  topFiveSubheading: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   avatar: {
     width: "100%",

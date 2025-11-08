@@ -16,6 +16,7 @@ import { useAuth } from "../auth/AuthContext";
 import supabase from "../supabase/client";
 import { useTheme } from "../styles/ThemeContext";
 import FriendSearchInput from "../components/common/FriendSearchInput";
+import ScreenHeader from "../components/common/ScreenHeader";
 
 export default function EditProfileScreen({ navigation }) {
   const { theme } = useTheme();
@@ -250,6 +251,7 @@ export default function EditProfileScreen({ navigation }) {
         data={fields}
         renderItem={renderField}
         keyExtractor={(item) => item.key}
+        ListHeaderComponent={<ScreenHeader title="Edit Profile" />}
         contentContainerStyle={[
           styles.container,
           { backgroundColor: theme.background, paddingBottom: 50 },

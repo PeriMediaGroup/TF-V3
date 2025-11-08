@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, LogBox, Text, View, StyleSheet, TouchableOpacity } from "react-native";
 import { useRoute, useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import supabase from "../supabase/client";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../styles/ThemeContext";
 import PostList from "../components/posts/PostList";
 import { arePostsStructurallyEqual } from "../components/posts/PostCard";
 import PostSkeleton from "../components/posts/PostSkeleton";
+import CreatePostFab from "../components/common/CreatePostFab";
 
 const PAGE_SIZE = 10;
 const FILTER_LABELS = {
@@ -96,6 +98,7 @@ export default function FeedScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
   const focusPostId = route?.params?.focusPostId;
   const [posts, setPosts] = useState([]);
   const [filter, setFilter] = useState("main");
@@ -341,7 +344,7 @@ export default function FeedScreen() {
     if (idx >= 0 && listRef.current) {
       try {
         listRef.current.scrollToIndex({ index: idx, animated: true, viewPosition: 0 });
-      } catch (e) {
+      } catch (_err) {
         // fallback: small timeout then try again
         setTimeout(() => {
           try { listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 }); } catch {}
@@ -354,7 +357,7 @@ export default function FeedScreen() {
     <FlatList
       data={Array.from({ length: 6 }, (_, i) => i)}
       keyExtractor={(i) => `skeleton-${i}`}
-      contentContainerStyle={styles.list}
+      contentContainerStyle={listContentStyle}
       renderItem={() => <PostSkeleton />}
     />
   );
@@ -439,36 +442,48 @@ export default function FeedScreen() {
     listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
   };
 
+  const filterBarTop = 8;
+  const filterBarHeight = 44;
+  const listPaddingTop = filterBarTop + filterBarHeight + 8;
+  const listPaddingBottom = (insets.bottom || 0) + 140;
+
   const filterBar = (
-    <View style={[styles.filterBar]}>
-      {filterOptions.map((key) => {
-        const active = filter === key;
-        return (
-          <TouchableOpacity
-            key={key}
-            style={[
-              styles.filterBtn,
-              {
-                backgroundColor: active ? theme.primary : "transparent",
-                borderColor: active ? theme.primary : theme.border,
-              },
-            ]}
-            onPress={() => onSelectFilter(key)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-          >
-            <Text
+    <View style={[styles.filterBarOverlay, { top: filterBarTop }]} pointerEvents="box-none">
+      <View style={styles.filterBar} pointerEvents="box-none">
+        {filterOptions.map((key) => {
+          const active = filter === key;
+          return (
+            <TouchableOpacity
+              key={key}
               style={[
-                styles.filterText,
-                { color: active ? theme.background : theme.text },
+                styles.filterBtn,
+                {
+                  backgroundColor: active ? theme.primary : theme.card,
+                  borderColor: active ? theme.primary : theme.border,
+                },
               ]}
+              onPress={() => onSelectFilter(key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
             >
-              {FILTER_LABELS[key]}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+              <Text
+                style={[
+                  styles.filterText,
+                  { color: active ? theme.background : theme.text },
+                ]}
+              >
+                {FILTER_LABELS[key]}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
+  );
+
+  const listContentStyle = useMemo(
+    () => [styles.list, { paddingTop: listPaddingTop, paddingBottom: listPaddingBottom }],
+    [listPaddingBottom, listPaddingTop]
   );
 
   if (loading && !refreshing) {
@@ -498,8 +513,8 @@ export default function FeedScreen() {
       setPosts((prev) => appendPostsPreservingIdentity(prev, next));
       setHasMore(next.length === PAGE_SIZE);
       setPage((prev) => prev + 1);
-    } catch (e) {
-      console.error('loadMore failed:', e?.message || e);
+    } catch (error) {
+      console.error('loadMore failed:', error?.message || error);
     } finally {
       setLoadingMore(false);
     }
@@ -519,7 +534,7 @@ export default function FeedScreen() {
           refreshing={refreshing}
           onRefresh={onRefresh}
           footerComponent={listFooter}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={listContentStyle}
           refreshTintColor={theme.primary}
         />
       ) : (
@@ -527,30 +542,36 @@ export default function FeedScreen() {
           <Text style={[styles.meta, { color: theme.muted }]}>No posts yet.</Text>
         </View>
       )}
+      <CreatePostFab />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  list: { padding: 12 },
+  list: { paddingHorizontal: 12 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   meta: { color: "#666" },
   footer: { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
+  filterBarOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 6,
+    elevation: 6,
+  },
   filterBar: {
     flexDirection: "row",
+    alignItems: "stretch",
     paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingVertical: 5,
     columnGap: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   filterBtn: {
     paddingVertical: 4,
     paddingHorizontal: 12,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 32,
     alignItems: "center",
     justifyContent: "center",
   },
