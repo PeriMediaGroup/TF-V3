@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import {
   Image,
   ActivityIndicator,
-  Button,
   StyleSheet,
   Text,
   View,
   ScrollView,
+  TouchableOpacity,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import dayjs from "dayjs";
@@ -18,6 +18,7 @@ import { useTheme } from "../styles/ThemeContext";
 import { fetchProfileStats } from "../supabase/helpers";
 import ScreenHeader from "../components/common/ScreenHeader";
 import CreatePostFab from "../components/common/CreatePostFab";
+import TfButton from "../components/common/TfButton";
 
 dayjs.extend(utc);
 
@@ -71,11 +72,15 @@ export default function ProfileScreen({ navigation: navigationProp }) {
 
   if (!profile) {
     return (
-      <View style={styles.center}>
-        <Text style={[styles.title, { color: theme.text }]}>
-          Profile not found
-        </Text>
-        <Button title="Log Out" onPress={logOut} />
+      <View style={[styles.center, { backgroundColor: theme.background }]}>
+        <Text style={[styles.title, { color: theme.text }]}>Profile not found</Text>
+        <View style={styles.actionList}>
+          <TfButton
+            label="Log Out"
+            onPress={logOut}
+            style={styles["actionList__button"]}
+          />
+        </View>
       </View>
     );
   }
@@ -88,11 +93,11 @@ export default function ProfileScreen({ navigation: navigationProp }) {
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView
         style={{ flex: 1 }}
-      contentContainerStyle={[styles.container, { paddingBottom: 80 }]}
-      keyboardShouldPersistTaps="handled"
-      nestedScrollEnabled={true} 
-      keyboardDismissMode="on-drag"
-    >
+        contentContainerStyle={[styles.container, { paddingBottom: 80 }]}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        keyboardDismissMode="on-drag"
+      >
       <ScreenHeader title="Profile" />
       <View
         style={[
@@ -183,25 +188,26 @@ export default function ProfileScreen({ navigation: navigationProp }) {
         </View>
       </View>
 
-      <View style={styles.button}>
-        <Button
-          title="Invite a Friend"
+      <View style={styles.actionList}>
+        <TfButton
+          label="Invite a Friend"
           onPress={() => navigation.navigate("InviteFriend")}
+          style={styles["actionList__button"]}
         />
-      </View>
-      <View style={styles.button}>
-        <Button
-          title="Edit Profile"
+        <TfButton
+          label="Edit Profile"
           onPress={() => navigation.navigate("EditProfile")}
+          style={styles["actionList__button"]}
         />
-      </View>
-      <View style={styles.button}>
-        <Button title="Log Out" onPress={logOut} />
-      </View>
-      <View style={styles.button}>
-        <Button
-          title="Settings"
+        <TfButton
+          label="Settings"
           onPress={() => navigation.navigate("Settings")}
+          style={styles["actionList__button"]}
+        />
+        <TfButton
+          label="Log Out"
+          onPress={logOut}
+          style={styles["actionList__button"]}
         />
       </View>
       </ScrollView>
@@ -218,7 +224,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: "600", marginBottom: 8 },
   info: { fontSize: 16, marginBottom: 8, textAlign: "center" },
   meta: { fontSize: 14, color: "#666", marginBottom: 6 },
-  button: { marginTop: 10, width: "60%" },
+  actionList: {
+    width: "100%",
+    marginTop: 8,
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  "actionList__button": {
+    marginTop: 12,
+    alignSelf: "stretch",
+  },
   avatarWrap: {
     width: 140,
     height: 140,

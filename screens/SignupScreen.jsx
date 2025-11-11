@@ -1,30 +1,20 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   TextInput,
-  Button,
   StyleSheet,
   Alert,
   Switch,
   TouchableOpacity,
+  Linking,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import supabase from "../supabase/client";
 import { Colors } from "../styles/GlobalStyles";
-
-// Reserved usernames (can later pull from DB if needed)
-const reservedUsernames = [
-  "admin",
-  "ceo",
-  "triggerfeed",
-  "tf-one",
-  "support",
-  "moderator",
-  "sig",
-  "sigsauer",
-  "sig_sauer",
-];
+import TfButton from "../components/common/TfButton";
+import debounce from "lodash.debounce";
+import reservedUsernames from "../data/reservedUsernames";
 
 export default function SignupScreen() {
   const navigation = useNavigation();
@@ -34,8 +24,78 @@ export default function SignupScreen() {
   const [username, setUsername] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState(null);
+  const [usernameSuggestions, setUsernameSuggestions] = useState([]);
 
   const isFormValid = email && password && username && agreed;
+  const supportMailHandler = useCallback(() => {
+    const sanitized = username || "TriggerFeed Username";
+    const subject = encodeURIComponent(`Username Claim: ${sanitized}`);
+    const body = encodeURIComponent(
+      `Hey TriggerFeed team,\n\nI'd like to claim the username "${sanitized}".\nHere's why I believe it should belong to me:\n\n[Add your reasoning here]\n\nThanks!`
+    );
+    Linking.openURL(
+      `mailto:support@triggerfeed.com?subject=${subject}&body=${body}`
+    );
+  }, [username]);
+
+  const checkUsername = useCallback(async (candidate) => {
+    if (!candidate) {
+      setUsernameStatus(null);
+      setUsernameSuggestions([]);
+      return;
+    }
+
+    const lower = candidate.toLowerCase();
+    if (reservedUsernames.includes(lower)) {
+      setUsernameStatus("reserved");
+      setUsernameSuggestions([]);
+      return;
+    }
+
+    setUsernameStatus("checking");
+    setUsernameSuggestions([]);
+
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", candidate)
+        .eq("is_deleted", false)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setUsernameStatus("taken");
+        const base = candidate.replace(/[^a-zA-Z0-9_]/g, "");
+        const random = Math.floor(Math.random() * 999);
+        const suffix = new Date().getFullYear().toString().slice(-2);
+        setUsernameSuggestions([`${base}_tf`, `${base}${suffix}`, `${base}${random}`]);
+      } else {
+        setUsernameStatus("available");
+        setUsernameSuggestions([]);
+      }
+    } catch (err) {
+      console.error("Username check failed:", err.message);
+      setUsernameStatus(null);
+      setUsernameSuggestions([]);
+    }
+  }, []);
+
+  const debouncedCheck = useMemo(() => debounce(checkUsername, 500), [checkUsername]);
+
+  useEffect(() => {
+    debouncedCheck(username);
+    return () => debouncedCheck.cancel();
+  }, [username, debouncedCheck]);
+
+  useEffect(() => {
+    if (email && !username) {
+      const suggestion = email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "");
+      setUsername(suggestion);
+    }
+  }, [email, username]);
 
   const handleSignup = async () => {
     if (!isFormValid) {
@@ -102,7 +162,7 @@ export default function SignupScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: Colors.gunmetal }]}>
-      <Text style={[styles.title, { color: Colors.crimson }]}>Create Account</Text>
+      <Text style={[styles.title, { color: Colors.crimson }]}>Join TriggerFeed</Text>
 
       <TextInput
         style={[styles.input, { color: Colors.white }]}
@@ -112,6 +172,49 @@ export default function SignupScreen() {
         value={username}
         onChangeText={setUsername}
       />
+      <View style={styles.usernameStatusContainer}>
+        {usernameStatus === "checking" && (
+          <Text style={[styles.statusText, { color: Colors.gray }]}>Checking...</Text>
+        )}
+
+        {usernameStatus === "available" && (
+          <Text style={[styles.statusText, { color: "limegreen" }]}>✅ Available</Text>
+        )}
+
+        {usernameStatus === "taken" && (
+          <View style={styles.statusBlock}>
+            <Text style={[styles.statusText, { color: Colors.crimson }]}>
+              ❌ Taken —{" "}
+              <Text style={styles.mailtoLink} onPress={supportMailHandler}>
+                let us know
+              </Text>{" "}
+              if you should own it.
+            </Text>
+            {usernameSuggestions.length > 0 && (
+              <View style={styles.suggestionList}>
+                {usernameSuggestions.map((sug) => (
+                  <TouchableOpacity
+                    key={sug}
+                    style={styles.suggestionPill}
+                    onPress={() => setUsername(sug)}
+                  >
+                    <Text style={{ color: Colors.white }}>{sug}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {usernameStatus === "reserved" && (
+          <Text style={[styles.statusText, { color: "gold" }]}>
+            ⚠ Reserved name —{" "}
+            <Text style={styles.mailtoLink} onPress={supportMailHandler}>
+              contact support@triggerfeed.com
+            </Text>
+          </Text>
+        )}
+      </View>
 
       <TextInput
         style={[styles.input, { color: Colors.white }]}
@@ -150,10 +253,12 @@ export default function SignupScreen() {
         />
       </View>
 
-      <Button
-        title={loading ? "Creating Account..." : "Sign Up"}
+      <TfButton
+        label={loading ? "Creating Account..." : "Sign Up"}
         onPress={handleSignup}
         disabled={!isFormValid || loading}
+        loading={loading}
+        style={styles.primaryButton}
       />
 
       <TouchableOpacity
@@ -186,4 +291,35 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   label: { fontSize: 14, flex: 1, marginRight: 10 },
+  primaryButton: {
+    marginTop: 8,
+  },
+  usernameStatusContainer: {
+    minHeight: 48,
+    marginBottom: 12,
+    justifyContent: "center",
+  },
+  statusText: {
+    fontSize: 13,
+  },
+  suggestionList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  suggestionPill: {
+    borderWidth: 1,
+    borderColor: "#444",
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  statusBlock: {
+    marginTop: 6,
+  },
+  mailtoLink: {
+    color: "#ffcc00",
+    textDecorationLine: "underline",
+  },
 });

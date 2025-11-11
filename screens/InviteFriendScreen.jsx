@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Alert,
-  Button,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,6 +13,7 @@ import { useTheme } from "../styles/ThemeContext";
 import { useAuth } from "../auth/AuthContext";
 import supabase from "../supabase/client";
 import ScreenHeader from "../components/common/ScreenHeader";
+import TfButton from "../components/common/TfButton";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -132,10 +132,12 @@ export default function InviteFriendScreen() {
           />
         </View>
 
-        <Button
-          title={loading ? "Sending…" : "Send Invite"}
+        <TfButton
+          label={loading ? "Sending..." : "Send Invite"}
           onPress={handleSubmit}
           disabled={loading}
+          loading={loading}
+          style={styles.submitButton}
         />
       </ScrollView>
     </KeyboardAvoidingView>
@@ -180,6 +182,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 120,
     fontSize: 16,
+  },
+  submitButton: {
+    marginTop: 12,
   },
 });
 

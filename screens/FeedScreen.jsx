@@ -442,13 +442,14 @@ export default function FeedScreen() {
     listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
   };
 
-  const filterBarTop = 8;
+  const filterBarTop = 0;
   const filterBarHeight = 44;
   const listPaddingTop = filterBarTop + filterBarHeight + 8;
   const listPaddingBottom = (insets.bottom || 0) + 140;
 
   const filterBar = (
-    <View style={[styles.filterBarOverlay, { top: filterBarTop }]} pointerEvents="box-none">
+    // style={[styles.screen, { backgroundColor: theme.background }]}
+    <View style={[styles.filterBarOverlay, { top: filterBarTop, backgroundColor: theme.background }]} pointerEvents="box-none">
       <View style={styles.filterBar} pointerEvents="box-none">
         {filterOptions.map((key) => {
           const active = filter === key;
@@ -564,7 +565,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "stretch",
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingVertical: 10,
     columnGap: 6,
   },
   filterBtn: {

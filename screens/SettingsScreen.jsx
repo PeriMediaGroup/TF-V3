@@ -9,7 +9,6 @@ import {
   Alert,
   Modal,
   TouchableOpacity,
-  Button,
 } from "react-native";
 import { useTheme } from "../styles/ThemeContext";
 import { Colors } from "../styles/GlobalStyles";
@@ -18,6 +17,7 @@ import { sendInviteEmail } from "../utils/inviteFriend";
 import supabase from "../supabase/client";
 import { showToast } from "../utils/toast";
 import ScreenHeader from "../components/common/ScreenHeader";
+import TfButton from "../components/common/TfButton";
 
 export default function SettingsScreen({ navigation }) {
   const { theme, toggleTheme, isDark } = useTheme();
@@ -117,9 +117,11 @@ export default function SettingsScreen({ navigation }) {
           />
         </View>
         {isElevated && (
-          <View style={{ marginTop: 12 }}>
-            <Button title="Admin Dashboard" onPress={() => navigation.navigate('AdminDashboard')} />
-          </View>
+          <TfButton
+            label="Admin Dashboard"
+            onPress={() => navigation.navigate("AdminDashboard")}
+            style={[styles.fullWidthButton, { marginTop: 12 }]}
+          />
         )}
 
         <View
@@ -148,11 +150,12 @@ export default function SettingsScreen({ navigation }) {
               },
             ]}
           />
-          <Button
-            title={inviteLoading ? "Sending..." : "Send Invite"}
-            color={Colors.crimson}
+          <TfButton
+            label={inviteLoading ? "Sending..." : "Send Invite"}
             onPress={handleInvite}
             disabled={inviteLoading}
+            loading={inviteLoading}
+            style={styles.fullWidthButton}
           />
         </View>
 
@@ -171,10 +174,11 @@ export default function SettingsScreen({ navigation }) {
           <Text style={[styles.dangerCopy, { color: theme.muted }]}>
             Deleting your account will anonymize your profile. Posts will remain and show Deleted User.
           </Text>
-          <Button
-            title="Delete Account"
-            color={Colors.crimson}
+          <TfButton
+            label="Delete Account"
             onPress={() => setDeleteModalVisible(true)}
+            variant="danger"
+            style={styles.fullWidthButton}
           />
         </View>
       </ScrollView>
@@ -309,5 +313,8 @@ const styles = StyleSheet.create({
   modalConfirmText: {
     color: "#fff",
     fontWeight: "700",
+  },
+  fullWidthButton: {
+    marginTop: 12,
   },
 });
