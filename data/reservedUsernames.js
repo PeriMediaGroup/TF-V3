@@ -178,6 +178,7 @@ const reservedUsernames = [
   "mac",
   "militaryarmschannel",
   "fat_electrician",
+  "the_fat_electrician",
   "eli_doubletap",
 ];
 
