@@ -6,7 +6,6 @@ import {
   View,
   Text,
   TextInput,
-  Button,
   ActivityIndicator,
   Alert,
   StyleSheet,
@@ -16,6 +15,8 @@ import { useAuth } from "../auth/AuthContext";
 import supabase from "../supabase/client";
 import { useTheme } from "../styles/ThemeContext";
 import FriendSearchInput from "../components/common/FriendSearchInput";
+import ScreenHeader from "../components/common/ScreenHeader";
+import TfButton from "../components/common/TfButton";
 
 export default function EditProfileScreen({ navigation }) {
   const { theme } = useTheme();
@@ -231,10 +232,12 @@ export default function EditProfileScreen({ navigation }) {
     }
     if (item.type === "button") {
       return (
-        <Button
-          title={saving ? "Saving..." : "Save"}
+        <TfButton
+          label={saving ? "Saving..." : "Save"}
           onPress={handleSave}
           disabled={saving}
+          loading={saving}
+          style={styles.saveButton}
         />
       );
     }
@@ -250,6 +253,7 @@ export default function EditProfileScreen({ navigation }) {
         data={fields}
         renderItem={renderField}
         keyExtractor={(item) => item.key}
+        ListHeaderComponent={<ScreenHeader title="Edit Profile" />}
         contentContainerStyle={[
           styles.container,
           { backgroundColor: theme.background, paddingBottom: 50 },
@@ -280,5 +284,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ccc",
     borderRadius: 6,
+  },
+  saveButton: {
+    marginTop: 12,
   },
 });

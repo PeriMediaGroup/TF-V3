@@ -10,14 +10,14 @@ import {
   Modal,
   TouchableOpacity,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../styles/ThemeContext";
 import { Colors } from "../styles/GlobalStyles";
-import { Button } from "react-native";
 import { useAuth } from "../auth/AuthContext";
 import { sendInviteEmail } from "../utils/inviteFriend";
 import supabase from "../supabase/client";
 import { showToast } from "../utils/toast";
+import ScreenHeader from "../components/common/ScreenHeader";
+import TfButton from "../components/common/TfButton";
 
 export default function SettingsScreen({ navigation }) {
   const { theme, toggleTheme, isDark } = useTheme();
@@ -103,19 +103,7 @@ export default function SettingsScreen({ navigation }) {
         contentContainerStyle={[styles.scrollContent, { backgroundColor: theme.background }]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.headerIcon}
-            accessibilityRole="button"
-          >
-            <Ionicons name="arrow-back" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>
-            Settings
-          </Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <ScreenHeader title="Settings" onBack={() => navigation.goBack()} />
 
         <View style={styles.row}>
           <Text style={[styles.label, { color: theme.text }]}>
@@ -129,9 +117,11 @@ export default function SettingsScreen({ navigation }) {
           />
         </View>
         {isElevated && (
-          <View style={{ marginTop: 12 }}>
-            <Button title="Admin Dashboard" onPress={() => navigation.navigate('AdminDashboard')} />
-          </View>
+          <TfButton
+            label="Admin Dashboard"
+            onPress={() => navigation.navigate("AdminDashboard")}
+            style={[styles.fullWidthButton, { marginTop: 12 }]}
+          />
         )}
 
         <View
@@ -160,11 +150,12 @@ export default function SettingsScreen({ navigation }) {
               },
             ]}
           />
-          <Button
-            title={inviteLoading ? "Sending..." : "Send Invite"}
-            color={Colors.crimson}
+          <TfButton
+            label={inviteLoading ? "Sending..." : "Send Invite"}
             onPress={handleInvite}
             disabled={inviteLoading}
+            loading={inviteLoading}
+            style={styles.fullWidthButton}
           />
         </View>
 
@@ -181,12 +172,13 @@ export default function SettingsScreen({ navigation }) {
             Account
           </Text>
           <Text style={[styles.dangerCopy, { color: theme.muted }]}>
-            Deleting your account will anonymize your profile. Posts will remain and show "Deleted User".
+            Deleting your account will anonymize your profile. Posts will remain and show Deleted User.
           </Text>
-          <Button
-            title="Delete Account"
-            color={Colors.crimson}
+          <TfButton
+            label="Delete Account"
             onPress={() => setDeleteModalVisible(true)}
+            variant="danger"
+            style={styles.fullWidthButton}
           />
         </View>
       </ScrollView>
@@ -205,7 +197,7 @@ export default function SettingsScreen({ navigation }) {
               Delete Account?
             </Text>
             <Text style={[styles.modalBody, { color: theme.text }]}>
-              If you choose to delete your account, your personal information will be removed, and your posts will appear under "Deleted User".
+              If you choose to delete your account, your personal information will be removed, and your posts will appear under Deleted User.
             </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -237,24 +229,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 40,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    marginBottom: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerIcon: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  headerSpacer: {
-    width: 24,
   },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 20 },
   row: {
@@ -339,5 +313,8 @@ const styles = StyleSheet.create({
   modalConfirmText: {
     color: "#fff",
     fontWeight: "700",
+  },
+  fullWidthButton: {
+    marginTop: 12,
   },
 });

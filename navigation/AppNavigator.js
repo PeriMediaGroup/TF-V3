@@ -2,8 +2,6 @@ import { View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 
-import { getFocusedRouteNameFromRoute } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../auth/AuthContext";
 
 import LoginScreen from "../screens/LoginScreen";
@@ -21,11 +19,10 @@ import TaggedFeedScreen from "../screens/TaggedFeedScreen";
 import VideoRecorderScreen from "../screens/VideoRecorderScreen";
 import TermsScreen from "../screens/TermsScreen";
 import AdminDashboardScreen from "../screens/AdminDashboard";
-import FooterTabBar from "../components/ui/FooterTabBar";
 import CameraCaptureScreen from "../screens/CameraCaptureScreen";
 
 import { useTheme } from "../styles/ThemeContext";
-import { Colors, Fonts } from "../styles/GlobalStyles";
+import { Fonts } from "../styles/GlobalStyles";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -112,7 +109,6 @@ function ProfileStack() {
 }
 
 function CreateStack() {
-  const { theme } = useTheme();
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CreateHome" component={CreatePostScreen} />
@@ -123,53 +119,26 @@ function CreateStack() {
 }
 
 function MainTabs() {
-  const { theme } = useTheme();
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => {
-        const focusedRoute = getFocusedRouteNameFromRoute(route) ?? "CreateHome";
-        const hideTabBar =
-          route.name === "Create" &&
-          (focusedRoute === "VideoRecorder" || focusedRoute === "CameraCapture");
-        return {
-          headerShown: false,
-          tabBarStyle: hideTabBar ? { display: "none" } : undefined,
-          tabBarActiveTintColor: Colors.white,
-          tabBarInactiveTintColor: theme.textMuted,
-          tabBarLabelStyle: { fontFamily: Fonts.body, fontSize: 11 },
-          tabBarHideOnKeyboard: true,
-        };
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { display: "none" },
       }}
-      tabBar={(props) => <FooterTabBar {...props} />}
+      tabBar={() => null}
     >
       <Tab.Screen
         name="Feed"
         component={FeedStack}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
-        }}
       />
       <Tab.Screen
         name="Create"
         component={CreateStack}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle-outline" size={size} color={color} />
-          ),
-        }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
-          ),
-          tabBarButton: () => null,
-        }}
       />
     </Tab.Navigator>
   );
@@ -187,7 +156,6 @@ function MainLayout() {
 
 export default function AppNavigator() {
   const { user, loading } = useAuth();
-  const { theme } = useTheme();
 
   if (loading) return null;
 

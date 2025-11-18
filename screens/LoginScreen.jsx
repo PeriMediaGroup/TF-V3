@@ -4,7 +4,6 @@ import {
   View,
   Text,
   TextInput,
-  Button,
   StyleSheet,
   Alert,
   TouchableOpacity,
@@ -13,6 +12,7 @@ import { useNavigation } from "@react-navigation/native";
 import { logIn } from "../supabase/helpers";
 import { Colors } from "../styles/GlobalStyles";
 import ForgotPassword from "../components/auth/ForgotPassword";
+import TfButton from "../components/common/TfButton";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -58,7 +58,11 @@ export default function LoginScreen() {
             onChangeText={setPassword}
           />
 
-          <Button title="Login" onPress={handleLogin} />
+          <TfButton
+            label="Login"
+            onPress={handleLogin}
+            style={styles.primaryButton}
+          />
 
           <TouchableOpacity
             style={{ marginTop: 16 }}
@@ -91,5 +95,8 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 6,
     marginBottom: 12,
+  },
+  primaryButton: {
+    marginTop: 4,
   },
 });

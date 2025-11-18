@@ -37,6 +37,7 @@ import { useMentionNotifier } from "../hooks/useMentionNotifier";
 import { createPollForPost } from "../supabase/polls";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import EmojiPickerModal from "../components/common/EmojiPickerModal";
+import ScreenHeader from "../components/common/ScreenHeader";
 
 const { Orientation } = ScreenOrientation;
 const VISIBILITY_OPTIONS = [
@@ -591,18 +592,7 @@ ${description}`);
       keyboardVerticalOffset={keyboardOffset}
     >
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.headerIcon}
-          >
-            <Ionicons name="arrow-back" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>
-            Create Post
-          </Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <ScreenHeader title="Create Post" onBack={() => navigation.goBack()} />
 
         <ScrollView
           ref={scrollRef}
@@ -1048,17 +1038,6 @@ function ThemedButton({ label, onPress, theme, disabled, style }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerIcon: { padding: 4 },
-  headerTitle: { fontSize: 18, fontWeight: "700" },
-  headerSpacer: { width: 24 },
   content: { padding: 16 },
   input: {
     borderWidth: 1,

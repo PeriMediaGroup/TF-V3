@@ -118,19 +118,46 @@ export const fetchProfileStats = async (userId) => {
       throw postsRes.error;
     }
 
-    const friendsRes = await supabase
+    const postCount = postsRes.count || 0;
+    let friendCount = 0;
+
+    const { data: friendsData, error: friendsError } = await supabase
       .from("friends")
-      .select("user_id", { count: "exact", head: true })
+      .select("user_id, friend_id, status")
       .eq("status", "accepted")
       .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
-    if (friendsRes.error) {
-      console.error("fetchProfileStats friends error:", friendsRes.error);
-      throw friendsRes.error;
+    if (friendsError) {
+      console.error("fetchProfileStats friends error:", friendsError);
+      throw friendsError;
     }
 
-    const postCount = postsRes.count || 0;
-    const friendCount = friendsRes.count || 0;
+    if (Array.isArray(friendsData) && friendsData.length > 0) {
+      const friendIds = new Set();
+      for (const entry of friendsData) {
+        if (!entry || entry.status !== "accepted") continue;
+        const { user_id: uid, friend_id: fid } = entry;
+        const otherId = uid === userId ? fid : uid;
+        if (otherId) {
+          friendIds.add(otherId);
+        }
+      }
+
+      if (friendIds.size > 0) {
+        const { data: activeProfiles, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id")
+          .in("id", Array.from(friendIds))
+          .eq("is_deleted", false);
+
+        if (profilesError) {
+          console.error("fetchProfileStats profile filter error:", profilesError);
+          friendCount = friendIds.size;
+        } else {
+          friendCount = Array.isArray(activeProfiles) ? activeProfiles.length : 0;
+        }
+      }
+    }
 
     return {
       postCount,
