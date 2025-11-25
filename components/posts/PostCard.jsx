@@ -28,9 +28,8 @@ import { useTheme } from "../../styles/ThemeContext";
 import { useAuth } from "../../auth/AuthContext";
 import {
   getCommentCount,
-  sendModerationNotice,
   flagPost,
-  recordPostDeletion,
+  deletePostModeration,
 } from "../../supabase/helpers";
 import { showToast } from "../../utils/toast";
 import supabase from "../../supabase/client";
@@ -974,15 +973,12 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
         style: "destructive",
         onPress: async () => {
           try {
-            const { error: reportsError } = await supabase
-              .from("reports")
-              .delete()
-              .eq("post_id", post.id);
-            if (reportsError) throw reportsError;
-            let q = supabase.from("posts").delete().eq("id", post.id);
-            if (!isElevated) q = q.eq("user_id", userId);
-            const { error } = await q;
-            if (error) throw error;
+            const result = await deletePostModeration({
+              postId: post.id,
+              reason: null,
+              reportId: null,
+            });
+            if (!result?.success) throw new Error(result?.error || "Delete failed");
             try {
               onDeleted?.(post.id);
             } catch {}
@@ -1002,38 +998,12 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
 
   const handleAdminDeleteWithReason = async (reason) => {
     try {
-      // If any previous audit rows exist, remove them to avoid FK blocks
-      try {
-        await supabase.from("post_deletions").delete().eq("post_id", post.id);
-      } catch {}
-      const { error: reportsError } = await supabase
-        .from("reports")
-        .delete()
-        .eq("post_id", post.id);
-      if (reportsError) throw reportsError;
-      // delete post first to avoid FK constraint blocks
-      let q = supabase.from("posts").delete().eq("id", post.id);
-      if (!isElevated) q = q.eq("user_id", userId);
-      const { error } = await q;
-      if (error) throw error;
-      if (isElevated && !isOwner) {
-        await sendModerationNotice({
-          userId: post.user_id,
-          postId: post.id,
-          reason,
-        });
-      }
-      // try to record deletion; ignore failure if FK blocks
-      try {
-        await recordPostDeletion({
-          postId: post.id,
-          deletedBy: userId,
-          userId: post.user_id,
-          title: post.title,
-          description: post.description,
-          reason,
-        });
-      } catch {}
+      const result = await deletePostModeration({
+        postId: post.id,
+        reason: reason || null,
+        reportId: null,
+      });
+      if (!result?.success) throw new Error(result?.error || "Delete failed");
       try {
         onDeleted?.(post.id);
       } catch {}

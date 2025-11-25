@@ -1,6 +1,15 @@
 import { Alert } from "react-native";
 import supabase from "./client";
 
+const invokeModerationAction = async (payload) => {
+  const { data, error } = await supabase.functions.invoke("moderate-delete", {
+    body: payload,
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+};
+
 export const getRankFromPostCount = (count = 0) => {
   if (count >= 50) return "Veteran";
   if (count >= 25) return "Sharpshooter";
@@ -367,10 +376,24 @@ export const recordPostDeletion = async ({ postId, deletedBy, userId, title, des
   }
 };
 
+export const deletePostModeration = async ({ postId, reason = null, reportId = null }) => {
+  try {
+    const { noticeSent } = await invokeModerationAction({
+      action: "delete_post",
+      postId,
+      reason,
+      reportId,
+    });
+    return { success: true, noticeSent: !!noticeSent };
+  } catch (e) {
+    console.error('deletePostModeration:', e.message);
+    return { success: false, error: e.message };
+  }
+};
+
 export const resolveReport = async (reportId) => {
   try {
-    const { error } = await supabase.from('reports').delete().eq('id', reportId);
-    if (error) throw error;
+    await invokeModerationAction({ action: "resolve_report", reportId });
     return { success: true };
   } catch (e) {
     console.error('resolveReport:', e.message);
@@ -378,20 +401,15 @@ export const resolveReport = async (reportId) => {
   }
 };
 
-export const moderateDeleteComment = async ({ commentId, postId, deletedBy, userId, reason }) => {
+export const moderateDeleteComment = async ({ commentId, postId, deletedBy, userId, reason, reportId = null }) => {
   try {
-    // log to reports
-    const { error: insErr } = await supabase.from('reports').insert([
-      { reported_by: deletedBy, post_id: postId ?? null, comment_id: commentId, reason },
-    ]);
-    if (insErr) throw insErr;
-
-    // delete comment
-    const { error: delErr } = await supabase.from('comments').delete().eq('id', commentId);
-    if (delErr) throw delErr;
-
-    // notify user
-    await sendModerationNotice({ userId, postId, commentId, reason });
+    await invokeModerationAction({
+      action: "delete_comment",
+      commentId,
+      postId,
+      reason,
+      reportId,
+    });
     return { success: true };
   } catch (e) {
     console.error('moderateDeleteComment:', e.message);
