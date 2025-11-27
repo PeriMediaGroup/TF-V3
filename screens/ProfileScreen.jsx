@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import {
   Image,
   ActivityIndicator,
-  Button,
   StyleSheet,
   Text,
   View,
   ScrollView,
+  TouchableOpacity,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import dayjs from "dayjs";
@@ -16,6 +16,9 @@ import { useAuth } from "../auth/AuthContext";
 import supabase from "../supabase/client";
 import { useTheme } from "../styles/ThemeContext";
 import { fetchProfileStats } from "../supabase/helpers";
+import ScreenHeader from "../components/common/ScreenHeader";
+import CreatePostFab from "../components/common/CreatePostFab";
+import TfButton from "../components/common/TfButton";
 
 dayjs.extend(utc);
 
@@ -69,11 +72,15 @@ export default function ProfileScreen({ navigation: navigationProp }) {
 
   if (!profile) {
     return (
-      <View style={styles.center}>
-        <Text style={[styles.title, { color: theme.text }]}>
-          Profile not found
-        </Text>
-        <Button title="Log Out" onPress={logOut} />
+      <View style={[styles.center, { backgroundColor: theme.background }]}>
+        <Text style={[styles.title, { color: theme.text }]}>Profile not found</Text>
+        <View style={styles.actionList}>
+          <TfButton
+            label="Log Out"
+            onPress={logOut}
+            style={styles["actionList__button"]}
+          />
+        </View>
       </View>
     );
   }
@@ -83,13 +90,15 @@ export default function ProfileScreen({ navigation: navigationProp }) {
     : null;
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: theme.background }}
-      contentContainerStyle={[styles.container, { paddingBottom: 80 }]}
-      keyboardShouldPersistTaps="handled"
-      nestedScrollEnabled={true} // 👈 add this
-      keyboardDismissMode="on-drag"
-    >
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.container, { paddingBottom: 80 }]}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        keyboardDismissMode="on-drag"
+      >
+      <ScreenHeader title="Profile" />
       <View
         style={[
           styles.avatarWrap,
@@ -141,60 +150,69 @@ export default function ProfileScreen({ navigation: navigationProp }) {
         </View>
       </View>
 
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>
-        Top 5 Guns
-      </Text>
-      {profile.top_guns?.length ? (
-        profile.top_guns.map((gun, i) => (
-          <Text key={i} style={[styles.meta, { color: theme.text }]}>
-            {i + 1}. {gun}
-          </Text>
-        ))
-      ) : (
-        <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
-      )}
+      <View style={[styles.topFiveSection, { borderColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          The Top Five
+        </Text>
+        <View style={styles.topFiveColumns}>
+          <View style={styles.topFiveColumn}>
+            <Text style={[styles.topFiveSubheading, { color: theme.muted }]}>Guns</Text>
+            {profile.top_guns?.length ? (
+              profile.top_guns.map((gun, i) => (
+                <Text key={i} style={[styles.meta, { color: theme.text }]}>
+                  {i + 1}. {gun}
+                </Text>
+              ))
+            ) : (
+              <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
+            )}
+          </View>
+          <View style={styles.topFiveColumn}>
+            <Text style={[styles.topFiveSubheading, { color: theme.muted }]}>Friends</Text>
+            {profile.top_friends?.length ? (
+              profile.top_friends.map((friend, i) => (
+                <Text
+                  key={i}
+                  style={[styles.meta, { color: theme.primary }]}
+                  onPress={() =>
+                    navigation.navigate("PublicProfile", { username: friend })
+                  }
+                >
+                  {i + 1}. {friend}
+                </Text>
+              ))
+            ) : (
+              <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
+            )}
+          </View>
+        </View>
+      </View>
 
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>
-        Top 5 Friends
-      </Text>
-      {profile.top_friends?.length ? (
-        profile.top_friends.map((friend, i) => (
-          <Text
-            key={i}
-            style={[styles.meta, { color: theme.primary }]}
-            onPress={() =>
-              navigation.navigate("PublicProfile", { username: friend })
-            }
-          >
-            {i + 1}. {friend}
-          </Text>
-        ))
-      ) : (
-        <Text style={[styles.meta, { color: theme.text }]}>Not set yet</Text>
-      )}
-
-      <View style={styles.button}>
-        <Button
-          title="Invite a Friend"
+      <View style={styles.actionList}>
+        <TfButton
+          label="Invite a Friend"
           onPress={() => navigation.navigate("InviteFriend")}
+          style={styles["actionList__button"]}
         />
-      </View>
-      <View style={styles.button}>
-        <Button
-          title="Edit Profile"
+        <TfButton
+          label="Edit Profile"
           onPress={() => navigation.navigate("EditProfile")}
+          style={styles["actionList__button"]}
         />
-      </View>
-      <View style={styles.button}>
-        <Button title="Log Out" onPress={logOut} />
-      </View>
-      <View style={styles.button}>
-        <Button
-          title="Settings"
+        <TfButton
+          label="Settings"
           onPress={() => navigation.navigate("Settings")}
+          style={styles["actionList__button"]}
+        />
+        <TfButton
+          label="Log Out"
+          onPress={logOut}
+          style={styles["actionList__button"]}
         />
       </View>
-    </ScrollView>
+      </ScrollView>
+      <CreatePostFab />
+    </View>
   );
 }
 
@@ -206,7 +224,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: "600", marginBottom: 8 },
   info: { fontSize: 16, marginBottom: 8, textAlign: "center" },
   meta: { fontSize: 14, color: "#666", marginBottom: 6 },
-  button: { marginTop: 10, width: "60%" },
+  actionList: {
+    width: "100%",
+    marginTop: 8,
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  "actionList__button": {
+    marginTop: 12,
+    alignSelf: "stretch",
+  },
   avatarWrap: {
     width: 140,
     height: 140,
@@ -233,6 +260,27 @@ const styles = StyleSheet.create({
   statText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  topFiveSection: {
+    width: "100%",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 16,
+  },
+  topFiveColumns: {
+    flexDirection: "row",
+    columnGap: 16,
+    marginTop: 8,
+  },
+  topFiveColumn: {
+    flex: 1,
+  },
+  topFiveSubheading: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   avatar: {
     width: "100%",
