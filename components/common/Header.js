@@ -70,7 +70,7 @@ export default function Header({ showBell = false, unreadCount, showMenu = true 
           style={styles.logoImage}
           resizeMode="contain"
         />
-        <Text style={[styles.logoText, { color: Colors.crimson }]}>TriggerFeed</Text>
+        <Text style={[styles.logoText, { color: Colors.white }]}>TriggerFeed</Text>
       </View>
 
       <View style={styles.actionRow}>

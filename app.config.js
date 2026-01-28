@@ -10,7 +10,7 @@ export default {
       fallbackToCacheTimeout: 0,
       url: "https://u.expo.dev/0988d9a8-92df-4221-b1dc-51d74f283b3d",
     },
-    version: "1.2.26",
+    version: "1.2.27",
     orientation: "default",
     icon: "./assets/images/icon/icon.png",
     splash: {
@@ -46,6 +46,7 @@ export default {
           isAccessMediaLocationEnabled: true,
         },
       ],
+      "./plugins/removeForegroundServicePermission",
     ],
 
     ios: {
@@ -61,7 +62,7 @@ export default {
 
     android: {
       package: "com.perimediagroup.triggerfeed",
-      versionCode: 1226,
+      versionCode: 1227,
       permissions: [
         "CAMERA",
         "RECORD_AUDIO",
