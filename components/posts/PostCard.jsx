@@ -1,15 +1,36 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, Alert, useWindowDimensions, Modal, StatusBar, Platform } from "react-native";
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  useWindowDimensions,
+  Modal,
+  StatusBar,
+  Platform,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import YoutubePlayer from "react-native-youtube-iframe";
 import { useNavigation } from "@react-navigation/native";
 import { VideoView, useVideoPlayer } from "expo-video";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useTheme } from "../../styles/ThemeContext";
 import { useAuth } from "../../auth/AuthContext";
-import { getCommentCount, sendModerationNotice, flagPost, recordPostDeletion } from "../../supabase/helpers";
+import {
+  getCommentCount,
+  flagPost,
+  deletePostModeration,
+} from "../../supabase/helpers";
 import { showToast } from "../../utils/toast";
 import supabase from "../../supabase/client";
 import VoteButtons from "./VoteButtons";
@@ -28,14 +49,18 @@ import usePoll from "../../hooks/usePoll";
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
 
-const YOUTUBE_LINK_REGEX = /(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=[^\s]+|youtu\.be\/[^\s]+)/gi;
+const YOUTUBE_LINK_REGEX =
+  /(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=[^\s]+|youtu\.be\/[^\s]+)/gi;
 
 const sanitizeTextContent = (value) => {
   if (!value) return null;
   const raw = String(value).trim();
   if (!raw) return null;
   if (!hasYoutubeLink(raw)) return raw;
-  const cleaned = raw.replace(YOUTUBE_LINK_REGEX, "").replace(/\s{2,}/g, " ").trim();
+  const cleaned = raw
+    .replace(YOUTUBE_LINK_REGEX, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   return cleaned || null;
 };
 
@@ -44,13 +69,22 @@ const isVideoUrl = (u) => {
   const lower = String(u).toLowerCase();
   const base = lower.split(/[?#]/)[0];
   if (base.includes("/video/upload")) return true; // cloudinary hint
-  return base.endsWith(".mp4") || base.endsWith(".mov") || base.endsWith(".m4v") || base.endsWith(".webm");
+  return (
+    base.endsWith(".mp4") ||
+    base.endsWith(".mov") ||
+    base.endsWith(".m4v") ||
+    base.endsWith(".webm")
+  );
 };
 
 const isYouTubeUrl = (u) => {
   if (!u) return false;
   const s = String(u).toLowerCase();
-  return s.includes("youtube.com/watch") || s.includes("youtu.be/") || s.includes("youtube.com/embed/");
+  return (
+    s.includes("youtube.com/watch") ||
+    s.includes("youtu.be/") ||
+    s.includes("youtube.com/embed/")
+  );
 };
 
 const getYouTubeId = (url) => {
@@ -60,9 +94,11 @@ const getYouTubeId = (url) => {
     // https://www.youtube.com/watch?v=VIDEOID
     if (u.hostname.includes("youtube.com")) {
       if (u.pathname.startsWith("/watch")) return u.searchParams.get("v");
-      if (u.pathname.startsWith("/embed/")) return u.pathname.split("/embed/")[1]?.split("/")[0];
+      if (u.pathname.startsWith("/embed/"))
+        return u.pathname.split("/embed/")[1]?.split("/")[0];
       // shorts: /shorts/VIDEOID
-      if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/shorts/")[1]?.split("/")[0];
+      if (u.pathname.startsWith("/shorts/"))
+        return u.pathname.split("/shorts/")[1]?.split("/")[0];
     }
     // https://youtu.be/VIDEOID
     if (u.hostname.includes("youtu.be")) {
@@ -72,10 +108,11 @@ const getYouTubeId = (url) => {
   return null;
 };
 
-const TF_ORIENTATION_PARAM = 'tf_orientation';
-const MEDIA_MAX_HEIGHT_RATIO = 0.75;
-const MEDIA_MAX_HEIGHT_ABSOLUTE = 960;
+const TF_ORIENTATION_PARAM = "tf_orientation";
+const MEDIA_MAX_HEIGHT_RATIO = 0.99;
+const MEDIA_MAX_HEIGHT_ABSOLUTE = 2000;
 const MEDIA_MAX_WIDTH_RATIO = 0.96;
+const VIDEO_SCREEN_HEIGHT_RATIO = .9;
 const IMAGE_ZOOM_MAX_SCALE = 4;
 const IMAGE_ZOOM_RESET_THRESHOLD = 1.02;
 const IMAGE_SWIPE_THRESHOLD = 80;
@@ -97,11 +134,9 @@ const clampScaleWorklet = (value) => {
 };
 
 const parseOrientationFromUrl = (url) => {
-
   if (!url) return null;
 
   try {
-
     const parsed = new URL(url);
 
     const raw = parsed.searchParams.get(TF_ORIENTATION_PARAM);
@@ -111,78 +146,59 @@ const parseOrientationFromUrl = (url) => {
     const numeric = Number(raw);
 
     return Number.isNaN(numeric) ? null : numeric;
-
   } catch {
-
     return null;
-
   }
-
 };
 
-
-
 const stripOrientationParam = (url) => {
-
   if (!url) return url;
 
   try {
-
     const parsed = new URL(url);
 
     parsed.searchParams.delete(TF_ORIENTATION_PARAM);
 
     return parsed.toString();
-
   } catch {
-
     return url;
-
   }
-
 };
-
-
 
 const rotationForOrientation = (orientation) => {
   switch (orientation) {
     case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
-      return '90deg';
+      return "90deg";
     case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
-      return '-90deg';
+      return "-90deg";
     case ScreenOrientation.Orientation.PORTRAIT_DOWN:
-      return '180deg';
+      return "180deg";
     default:
-      return '0deg';
+      return "0deg";
   }
 };
 
 const aspectForOrientation = (orientation, fallback = 16 / 9) => {
-
-  if (orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
-
-      orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN) {
-
+  if (
+    orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
+    orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN
+  ) {
     return 9 / 16;
-
   }
 
-  if (orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
-
-      orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT) {
-
+  if (
+    orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+    orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
+  ) {
     return 16 / 9;
-
   }
 
   return fallback;
-
 };
 
-
-
 const VideoItem = React.memo(function VideoItem({ url, ratio, mediaWidth }) {
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const { width: viewportWidth, height: viewportHeight } =
+    useWindowDimensions();
   const [availableWidth, setAvailableWidth] = useState(mediaWidth ?? null);
   const orientation = parseOrientationFromUrl(url);
   const playbackUrl = orientation !== null ? stripOrientationParam(url) : url;
@@ -207,35 +223,41 @@ const VideoItem = React.memo(function VideoItem({ url, ratio, mediaWidth }) {
     });
   }, [mediaWidth]);
   const surfaceStyle = useMemo(() => {
-    const bounds = {
+    const targetHeight = Math.min(
       maxHeight,
-      maxWidth: viewportMaxWidth,
-    };
-    if (!availableWidth) {
-      return { ...bounds, width: "100%", aspectRatio: containerAspect };
+      viewportHeight * VIDEO_SCREEN_HEIGHT_RATIO
+    );
+    const maxUsableWidth = availableWidth ?? viewportMaxWidth;
+    let height = targetHeight;
+    let width = height * containerAspect;
+    if (width > maxUsableWidth) {
+      width = maxUsableWidth;
+      height = width / containerAspect;
     }
-    let width = Math.min(availableWidth, viewportMaxWidth);
-    let height = width / containerAspect;
     if (height > maxHeight) {
       height = maxHeight;
       width = height * containerAspect;
     }
-    if (width > availableWidth) {
-      width = availableWidth;
-      height = width / containerAspect;
-    }
-    return { ...bounds, width, height };
-  }, [availableWidth, containerAspect, maxHeight, viewportMaxWidth]);
+    return { width, height };
+  }, [availableWidth, containerAspect, maxHeight, viewportHeight, viewportMaxWidth]);
+  const videoBaseStyle = useMemo(
+    () => ({
+      width: surfaceStyle.width,
+      height: surfaceStyle.height,
+    }),
+    [surfaceStyle.height, surfaceStyle.width]
+  );
   const videoStyle =
     rotate === "0deg"
-      ? styles.video
-      : [styles.video, { transform: [{ rotate }] }];
+      ? [videoBaseStyle]
+      : [videoBaseStyle, { transform: [{ rotate }] }];
   const wrapperStyle = useMemo(() => {
-    if (typeof surfaceStyle.width === "number") {
-      return [styles.mediaItemWrapperTight, { width: surfaceStyle.width }];
-    }
-    return styles.mediaItemWrapperLoose;
-  }, [surfaceStyle.width]);
+    const dynamic = {
+      width: surfaceStyle.width,
+      height: surfaceStyle.height,
+    };
+    return [styles.mediaItemWrapperTight, dynamic];
+  }, [surfaceStyle.height, surfaceStyle.width]);
   return (
     <View
       style={wrapperStyle}
@@ -256,7 +278,7 @@ const VideoItem = React.memo(function VideoItem({ url, ratio, mediaWidth }) {
           player={player}
           style={videoStyle}
           nativeControls
-          contentFit="cover"
+          contentFit="contain"
           resizeMode="contain"
         />
       </View>
@@ -264,7 +286,11 @@ const VideoItem = React.memo(function VideoItem({ url, ratio, mediaWidth }) {
   );
 });
 
-const YouTubeItem = React.memo(function YouTubeItem({ videoId, ratio = 16 / 9, autoplay }) {
+const YouTubeItem = React.memo(function YouTubeItem({
+  videoId,
+  ratio = 16 / 9,
+  autoplay,
+}) {
   const { width } = useWindowDimensions();
   if (!videoId) return null;
   const playerWidth = Math.max(260, Math.min(width - 48, width));
@@ -277,15 +303,23 @@ const YouTubeItem = React.memo(function YouTubeItem({ videoId, ratio = 16 / 9, a
         videoId={videoId}
         play={!!autoplay}
         initialPlayerParams={{ controls: true, modestbranding: true }}
-        webViewProps={{ allowsFullscreenVideo: true, mediaPlaybackRequiresUserAction: false, allowsInlineMediaPlayback: true }}
+        webViewProps={{
+          allowsFullscreenVideo: true,
+          mediaPlaybackRequiresUserAction: false,
+          allowsInlineMediaPlayback: true,
+        }}
       />
     </View>
   );
 });
 
-
-const ZoomableImage = React.memo(function ZoomableImage({ uri, onSwipeLeft, onSwipeRight }) {
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+const ZoomableImage = React.memo(function ZoomableImage({
+  uri,
+  onSwipeLeft,
+  onSwipeRight,
+}) {
+  const { width: viewportWidth, height: viewportHeight } =
+    useWindowDimensions();
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -307,7 +341,15 @@ const ZoomableImage = React.memo(function ZoomableImage({ uri, onSwipeLeft, onSw
     translateY.value = withTiming(0, { duration: 150 });
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
-  }, [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY, uri]);
+  }, [
+    savedScale,
+    savedTranslateX,
+    savedTranslateY,
+    scale,
+    translateX,
+    translateY,
+    uri,
+  ]);
 
   const pinchGesture = useMemo(
     () =>
@@ -328,12 +370,31 @@ const ZoomableImage = React.memo(function ZoomableImage({ uri, onSwipeLeft, onSw
             savedTranslateY.value = 0;
             return;
           }
-          const boundsX = Math.max(0, ((scale.value - 1) * layoutWidth.value) / 2);
-          const boundsY = Math.max(0, ((scale.value - 1) * layoutHeight.value) / 2);
-          translateX.value = withTiming(clampTranslateWorklet(translateX.value, boundsX));
-          translateY.value = withTiming(clampTranslateWorklet(translateY.value, boundsY));
+          const boundsX = Math.max(
+            0,
+            ((scale.value - 1) * layoutWidth.value) / 2
+          );
+          const boundsY = Math.max(
+            0,
+            ((scale.value - 1) * layoutHeight.value) / 2
+          );
+          translateX.value = withTiming(
+            clampTranslateWorklet(translateX.value, boundsX)
+          );
+          translateY.value = withTiming(
+            clampTranslateWorklet(translateY.value, boundsY)
+          );
         }),
-    [layoutHeight, layoutWidth, savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY]
+    [
+      layoutHeight,
+      layoutWidth,
+      savedScale,
+      savedTranslateX,
+      savedTranslateY,
+      scale,
+      translateX,
+      translateY,
+    ]
   );
 
   const panGesture = useMemo(
@@ -346,10 +407,22 @@ const ZoomableImage = React.memo(function ZoomableImage({ uri, onSwipeLeft, onSw
         })
         .onUpdate((event) => {
           if (scale.value > IMAGE_ZOOM_RESET_THRESHOLD) {
-            const boundsX = Math.max(0, ((scale.value - 1) * layoutWidth.value) / 2);
-            const boundsY = Math.max(0, ((scale.value - 1) * layoutHeight.value) / 2);
-            translateX.value = clampTranslateWorklet(savedTranslateX.value + event.translationX, boundsX);
-            translateY.value = clampTranslateWorklet(savedTranslateY.value + event.translationY, boundsY);
+            const boundsX = Math.max(
+              0,
+              ((scale.value - 1) * layoutWidth.value) / 2
+            );
+            const boundsY = Math.max(
+              0,
+              ((scale.value - 1) * layoutHeight.value) / 2
+            );
+            translateX.value = clampTranslateWorklet(
+              savedTranslateX.value + event.translationX,
+              boundsX
+            );
+            translateY.value = clampTranslateWorklet(
+              savedTranslateY.value + event.translationY,
+              boundsY
+            );
           }
         })
         .onEnd((event) => {
@@ -376,12 +449,32 @@ const ZoomableImage = React.memo(function ZoomableImage({ uri, onSwipeLeft, onSw
             savedTranslateY.value = 0;
             return;
           }
-          const boundsX = Math.max(0, ((scale.value - 1) * layoutWidth.value) / 2);
-          const boundsY = Math.max(0, ((scale.value - 1) * layoutHeight.value) / 2);
-          translateX.value = withTiming(clampTranslateWorklet(translateX.value, boundsX));
-          translateY.value = withTiming(clampTranslateWorklet(translateY.value, boundsY));
+          const boundsX = Math.max(
+            0,
+            ((scale.value - 1) * layoutWidth.value) / 2
+          );
+          const boundsY = Math.max(
+            0,
+            ((scale.value - 1) * layoutHeight.value) / 2
+          );
+          translateX.value = withTiming(
+            clampTranslateWorklet(translateX.value, boundsX)
+          );
+          translateY.value = withTiming(
+            clampTranslateWorklet(translateY.value, boundsY)
+          );
         }),
-    [layoutHeight, layoutWidth, onSwipeLeft, onSwipeRight, savedTranslateX, savedTranslateY, scale, translateX, translateY]
+    [
+      layoutHeight,
+      layoutWidth,
+      onSwipeLeft,
+      onSwipeRight,
+      savedTranslateX,
+      savedTranslateY,
+      scale,
+      translateX,
+      translateY,
+    ]
   );
 
   const gesture = useMemo(
@@ -417,7 +510,6 @@ const ZoomableImage = React.memo(function ZoomableImage({ uri, onSwipeLeft, onSw
   );
 });
 
-
 const MediaItem = React.memo(function MediaItem({ url, mediaWidth, onPress }) {
   const [ratio, setRatio] = useState(1);
   const [ytPlaying, setYtPlaying] = useState(false);
@@ -444,13 +536,32 @@ const MediaItem = React.memo(function MediaItem({ url, mediaWidth, onPress }) {
     if (!ytPlaying) {
       const thumb = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
       return (
-        <TouchableOpacity onPress={() => setYtPlaying(true)} activeOpacity={0.8} style={{ marginRight: 8, flex: 1 }}>
+        <TouchableOpacity
+          onPress={() => setYtPlaying(true)}
+          activeOpacity={0.8}
+          style={{ marginRight: 8, flex: 1 }}
+        >
           <Image
             source={{ uri: thumb }}
-            style={{ width: '100%', height: undefined, aspectRatio: 16 / 9, borderRadius: 8 }}
+            style={{
+              width: "100%",
+              height: undefined,
+              aspectRatio: 16 / 9,
+              borderRadius: 8,
+            }}
             resizeMode="cover"
           />
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
             <Ionicons name="play-circle" size={64} color="#ffffffcc" />
           </View>
         </TouchableOpacity>
@@ -466,24 +577,29 @@ const MediaItem = React.memo(function MediaItem({ url, mediaWidth, onPress }) {
   const image = (
     <Image
       source={{ uri: url }}
-      style={{ width: "100%", height: undefined, aspectRatio: ratio || 1, borderRadius: 8 }}
+      style={{
+        width: "100%",
+        height: undefined,
+        aspectRatio: ratio || 1,
+        borderRadius: 8,
+      }}
       resizeMode="cover"
     />
   );
 
   if (typeof onPress === "function") {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={{ marginRight: 8, flex: 1 }}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.85}
+        style={{ marginRight: 8, flex: 1 }}
+      >
         {image}
       </TouchableOpacity>
     );
   }
 
-  return (
-    <View style={{ marginRight: 8, flex: 1 }}>
-      {image}
-    </View>
-  );
+  return <View style={{ marginRight: 8, flex: 1 }}>{image}</View>;
 });
 
 function extractMediaUrls(post) {
@@ -496,9 +612,11 @@ function extractMediaUrls(post) {
     }
   }
   // Fallback single media fields on the post
-  if (post?.image_url && !urls.includes(post.image_url)) urls.push(post.image_url);
+  if (post?.image_url && !urls.includes(post.image_url))
+    urls.push(post.image_url);
   if (post?.gif_url && !urls.includes(post.gif_url)) urls.push(post.gif_url);
-  if (post?.video_url && !urls.includes(post.video_url)) urls.push(post.video_url);
+  if (post?.video_url && !urls.includes(post.video_url))
+    urls.push(post.video_url);
   // Detect YouTube links in title/description text
   try {
     const txt = [post?.title, post?.description].filter(Boolean).join(" \n ");
@@ -615,8 +733,14 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(null);
   const userId = user?.id ?? null;
-  const sanitizedTitle = useMemo(() => sanitizeTextContent(post?.title), [post?.title]);
-  const sanitizedDescription = useMemo(() => sanitizeTextContent(post?.description), [post?.description]);
+  const sanitizedTitle = useMemo(
+    () => sanitizeTextContent(post?.title),
+    [post?.title]
+  );
+  const sanitizedDescription = useMemo(
+    () => sanitizeTextContent(post?.description),
+    [post?.description]
+  );
   const mediaUrls = useMemo(() => extractMediaUrls(post), [post]);
 
   const closeImageViewer = useCallback(() => {
@@ -627,7 +751,9 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
   const openImageViewer = useCallback(
     (index = 0) => {
       if (!mediaUrls.length) return;
-      const safeIndex = Number.isFinite(index) ? Math.min(Math.max(index, 0), mediaUrls.length - 1) : 0;
+      const safeIndex = Number.isFinite(index)
+        ? Math.min(Math.max(index, 0), mediaUrls.length - 1)
+        : 0;
       setViewerIndex(safeIndex);
       setViewerVisible(true);
     },
@@ -662,10 +788,17 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
           onLayout={(event) => {
             const width = event?.nativeEvent?.layout?.width ?? 0;
             if (!width) return;
-            setMediaWidth((prev) => (prev && Math.abs(prev - width) < 1 ? prev : width));
+            setMediaWidth((prev) =>
+              prev && Math.abs(prev - width) < 1 ? prev : width
+            );
           }}
         >
-          <MediaItem key={`single-${post.id}`} url={mediaUrls[0]} mediaWidth={mediaWidth} onPress={() => openImageViewer(0)} />
+          <MediaItem
+            key={`single-${post.id}`}
+            url={mediaUrls[0]}
+            mediaWidth={mediaWidth}
+            onPress={() => openImageViewer(0)}
+          />
         </View>
       );
     }
@@ -677,11 +810,18 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
         onLayout={(event) => {
           const width = event?.nativeEvent?.layout?.width ?? 0;
           if (!width) return;
-          setMediaWidth((prev) => (prev && Math.abs(prev - width) < 1 ? prev : width));
+          setMediaWidth((prev) =>
+            prev && Math.abs(prev - width) < 1 ? prev : width
+          );
         }}
       >
         {mediaUrls.map((u, idx) => (
-          <MediaItem key={`${post.id}-${idx}-${u}`} url={u} mediaWidth={mediaWidth} onPress={() => openImageViewer(idx)} />
+          <MediaItem
+            key={`${post.id}-${idx}-${u}`}
+            url={u}
+            mediaWidth={mediaWidth}
+            onPress={() => openImageViewer(idx)}
+          />
         ))}
       </ScrollView>
     );
@@ -703,13 +843,19 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
   const modalVisible = viewerVisible && !!activeImageUrl;
   const hasMultipleImages = mediaUrls.length > 1;
   const canGoPrev = hasMultipleImages && viewerIndex != null && viewerIndex > 0;
-  const canGoNext = hasMultipleImages && viewerIndex != null && viewerIndex < mediaUrls.length - 1;
+  const canGoNext =
+    hasMultipleImages &&
+    viewerIndex != null &&
+    viewerIndex < mediaUrls.length - 1;
   const viewerCounterLabel =
-    hasMultipleImages && viewerIndex != null ? `${viewerIndex + 1} / ${mediaUrls.length}` : null;
+    hasMultipleImages && viewerIndex != null
+      ? `${viewerIndex + 1} / ${mediaUrls.length}`
+      : null;
 
   useEffect(() => {
     const baseStyle = isDark ? "light-content" : "dark-content";
-    const baseBackground = theme?.background || (isDark ? "#000000" : "#FFFFFF");
+    const baseBackground =
+      theme?.background || (isDark ? "#000000" : "#FFFFFF");
     if (modalVisible) {
       StatusBar.setBarStyle("light-content", true);
       if (Platform.OS === "android") {
@@ -732,7 +878,11 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
     if (!post?.created_at) return "";
     return dayjs.utc(post.created_at).local().fromNow();
   }, [post?.created_at]);
-  const isElevated = !!ctxElevated || (myProfile?.role && ['admin','ceo'].includes(String(myProfile.role).toLowerCase())) || !!(myProfile?.is_admin || myProfile?.is_ceo);
+  const isElevated =
+    !!ctxElevated ||
+    (myProfile?.role &&
+      ["admin", "ceo"].includes(String(myProfile.role).toLowerCase())) ||
+    !!(myProfile?.is_admin || myProfile?.is_ceo);
   const isOwner = !!userId && userId === post?.user_id;
   const canDelete = !!userId && (isElevated || isOwner);
   const [adminMenuVisible, setAdminMenuVisible] = useState(false);
@@ -741,10 +891,13 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
   const [editVisible, setEditVisible] = useState(false);
 
   useEffect(() => {
-    setPost((prev) => (arePostsStructurallyEqual(prev, initialPost) ? prev : initialPost));
+    setPost((prev) =>
+      arePostsStructurallyEqual(prev, initialPost) ? prev : initialPost
+    );
   }, [initialPost]);
   const pollRelation = Array.isArray(post?.polls_app) ? post.polls_app : null;
-  const pollPreview = pollRelation && pollRelation.length > 0 ? pollRelation[0] : null;
+  const pollPreview =
+    pollRelation && pollRelation.length > 0 ? pollRelation[0] : null;
   const shouldFetchPollByPost =
     !!post?.id && (!pollRelation || pollRelation.length === 0);
   const {
@@ -762,9 +915,12 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
   const handleSaveEdit = useCallback(
     async ({ title, description, visibility }) => {
       if (!post?.id) throw new Error("Missing post");
-      if (!isOwner || !userId) throw new Error("Only the owner can edit this post");
+      if (!isOwner || !userId)
+        throw new Error("Only the owner can edit this post");
       const nextVisibility =
-        visibility === "friends" || visibility === "public" ? visibility : post?.visibility;
+        visibility === "friends" || visibility === "public"
+          ? visibility
+          : post?.visibility;
       const updates = { title, description, visibility: nextVisibility };
       const { error } = await supabase
         .from("posts")
@@ -817,23 +973,24 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
         style: "destructive",
         onPress: async () => {
           try {
-            const { error: reportsError } = await supabase
-              .from("reports")
-              .delete()
-              .eq("post_id", post.id);
-            if (reportsError) throw reportsError;
-            let q = supabase.from("posts").delete().eq("id", post.id);
-            if (!isElevated) q = q.eq("user_id", userId);
-            const { error } = await q;
-            if (error) throw error;
-            try { onDeleted?.(post.id); } catch {}
-            try { navigation.canGoBack() && navigation.goBack(); } catch {}
+            const result = await deletePostModeration({
+              postId: post.id,
+              reason: null,
+              reportId: null,
+            });
+            if (!result?.success) throw new Error(result?.error || "Delete failed");
+            try {
+              onDeleted?.(post.id);
+            } catch {}
+            try {
+              navigation.canGoBack() && navigation.goBack();
+            } catch {}
           } catch (e) {
             console.error("delete post:", e.message);
-            showToast('Delete failed');
+            showToast("Delete failed");
             return;
           }
-          showToast('Post deleted');
+          showToast("Post deleted");
         },
       },
     ]);
@@ -841,38 +998,22 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
 
   const handleAdminDeleteWithReason = async (reason) => {
     try {
-      // If any previous audit rows exist, remove them to avoid FK blocks
-      try { await supabase.from('post_deletions').delete().eq('post_id', post.id); } catch {}
-      const { error: reportsError } = await supabase
-        .from('reports')
-        .delete()
-        .eq('post_id', post.id);
-      if (reportsError) throw reportsError;
-      // delete post first to avoid FK constraint blocks
-            let q = supabase.from("posts").delete().eq("id", post.id);
-            if (!isElevated) q = q.eq("user_id", userId);
-      const { error } = await q;
-      if (error) throw error;
-      if (isElevated && !isOwner) {
-        await sendModerationNotice({ userId: post.user_id, postId: post.id, reason });
-      }
-      // try to record deletion; ignore failure if FK blocks
+      const result = await deletePostModeration({
+        postId: post.id,
+        reason: reason || null,
+        reportId: null,
+      });
+      if (!result?.success) throw new Error(result?.error || "Delete failed");
       try {
-        await recordPostDeletion({
-          postId: post.id,
-          deletedBy: userId,
-          userId: post.user_id,
-          title: post.title,
-          description: post.description,
-          reason,
-        });
+        onDeleted?.(post.id);
       } catch {}
-      try { onDeleted?.(post.id); } catch {}
-      showToast('Post removed');
-      try { navigation.canGoBack() && navigation.goBack(); } catch {}
+      showToast("Post removed");
+      try {
+        navigation.canGoBack() && navigation.goBack();
+      } catch {}
     } catch (e) {
       console.error("delete post (reason):", e.message);
-      showToast('Delete failed');
+      showToast("Delete failed");
     }
   };
 
@@ -893,7 +1034,12 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
       .channel("comments-post-card-" + post.id)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "comments", filter: `post_id=eq.${post.id}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "comments",
+          filter: `post_id=eq.${post.id}`,
+        },
         () => fetchCommentsCount()
       )
       .subscribe();
@@ -927,7 +1073,10 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
           onPress={() => {
             const uname = post.profiles?.username;
             if (uname) {
-              navigation.navigate("Profile", { screen: "PublicProfile", params: { username: uname } });
+              navigation.navigate("Profile", {
+                screen: "PublicProfile",
+                params: { username: uname },
+              });
             } else {
               navigation.navigate("Profile");
             }
@@ -936,9 +1085,14 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
           activeOpacity={0.7}
         >
           {post.profiles?.profile_image_url ? (
-            <Image source={{ uri: post.profiles.profile_image_url }} style={styles.avatar} />
+            <Image
+              source={{ uri: post.profiles.profile_image_url }}
+              style={styles.avatar}
+            />
           ) : (
-            <View style={[styles.avatar, { backgroundColor: theme.cardSoft }]} />
+            <View
+              style={[styles.avatar, { backgroundColor: theme.cardSoft }]}
+            />
           )}
           <View>
             <Text style={[styles.username, { color: theme.text }]}>
@@ -991,7 +1145,10 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
       <View style={styles.footerRow}>
         <VoteButtons postId={post.id} userId={userId} />
         <View style={styles.footerActions}>
-          <TouchableOpacity onPress={() => setShowComments((v) => !v)} style={styles.actionButton}>
+          <TouchableOpacity
+            onPress={() => setShowComments((v) => !v)}
+            style={styles.actionButton}
+          >
             <Text style={[styles.commentCount, { color: theme.muted }]}>
               💬 {commentCount}
             </Text>
@@ -1006,7 +1163,10 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
               >
                 <Ionicons name="create-outline" size={18} color={theme.muted} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleDeletePost} style={styles.actionButton}>
+              <TouchableOpacity
+                onPress={handleDeletePost}
+                style={styles.actionButton}
+              >
                 <Text style={[styles.commentCount, { color: "red" }]}>🗑</Text>
               </TouchableOpacity>
             </>
@@ -1091,15 +1251,24 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
           setAdminMenuVisible(false);
           handleDeletePost();
         }}
-        onAskReason={() => { setAdminMenuVisible(false); setReasonVisible(true); }}
-        onOpenDashboard={() => { setAdminMenuVisible(false); navigation.navigate('Profile', { screen: 'AdminDashboard' }); }}
+        onAskReason={() => {
+          setAdminMenuVisible(false);
+          setReasonVisible(true);
+        }}
+        onOpenDashboard={() => {
+          setAdminMenuVisible(false);
+          navigation.navigate("Profile", { screen: "AdminDashboard" });
+        }}
       />
       <ReasonModal
         visible={reasonVisible}
         title="Reason for removal"
         placeholder="Explain why this post is removed"
         onCancel={() => setReasonVisible(false)}
-        onSubmit={(txt) => { setReasonVisible(false); handleAdminDeleteWithReason(txt); }}
+        onSubmit={(txt) => {
+          setReasonVisible(false);
+          handleAdminDeleteWithReason(txt);
+        }}
       />
       <FlagPostModal
         visible={flagVisible}
@@ -1108,8 +1277,11 @@ function PostCardComponent({ post: initialPost, user, onDeleted, onUpdated }) {
           setFlagVisible(false);
           try {
             await flagPost({ postId: post.id, userId, reason });
-            showToast('Reported');
-          } catch (e) { console.error('flag post:', e.message); showToast('Report failed'); }
+            showToast("Reported");
+          } catch (e) {
+            console.error("flag post:", e.message);
+            showToast("Report failed");
+          }
         }}
       />
       <EditPostModal
@@ -1143,9 +1315,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 16,
     padding: 12,
-    position: 'relative',
+    position: "relative",
   },
-  gearBtn: { position: 'absolute', right: 8, top: 8, padding: 4, borderRadius: 12 },
+  gearBtn: {
+    position: "absolute",
+    right: 8,
+    top: 8,
+    padding: 4,
+    borderRadius: 12,
+  },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   avatar: {
     width: 40,
@@ -1184,23 +1362,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   mediaItemWrapperTight: {
-    marginRight: 8,
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
-    flexShrink: 0,
-    flexGrow: 0,
   },
   videoSurface: {
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "",
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
-  },
-  video: {
-    width: "100%",
-    height: "100%",
+    alignSelf: "center",
   },
   footerRow: {
     flexDirection: "row",
@@ -1225,8 +1397,16 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginLeft: 8,
   },
-  debugPill: { position: 'absolute', left: 8, top: 8, backgroundColor: '#333c', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
-  debugText: { color: '#fff', fontSize: 10 },
+  debugPill: {
+    position: "absolute",
+    left: 8,
+    top: 8,
+    backgroundColor: "#333c",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  debugText: { color: "#fff", fontSize: 10 },
   viewerBackdrop: {
     flex: 1,
     backgroundColor: "#000",
@@ -1252,7 +1432,7 @@ const styles = StyleSheet.create({
     right: 20,
     padding: 8,
     borderRadius: 20,
-    backgroundColor: "#00000088",
+    backgroundColor: "#000",
   },
   viewerNavButton: {
     position: "absolute",
@@ -1261,7 +1441,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 24,
-    backgroundColor: "#00000080",
+    backgroundColor: "#000",
   },
   viewerNavButtonLeft: {
     left: 20,
@@ -1276,7 +1456,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: "#00000080",
+    backgroundColor: "#000",
   },
   viewerCounterText: {
     color: "#fff",

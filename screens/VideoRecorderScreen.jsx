@@ -42,6 +42,7 @@ export default function VideoRecorderScreen() {
   const [cameraReady, setCameraReady] = useState(false);
   const [requestingPermissions, setRequestingPermissions] = useState(false);
   const timerRef = useRef(null);
+  const secondsRef = useRef(0);
 
   const requestCameraWithLogging = useCallback(
     async (reason) => {
@@ -261,13 +262,16 @@ export default function VideoRecorderScreen() {
 
   const startTimer = () => {
     setSeconds(0);
+    secondsRef.current = 0;
     timerRef.current = setInterval(() => {
       setSeconds((s) => {
         if (s + 1 >= MAX_SECONDS) {
           stopRecording();
           return MAX_SECONDS;
         }
-        return s + 1;
+        const next = s + 1;
+        secondsRef.current = next;
+        return next;
       });
     }, 1000);
   };
@@ -307,11 +311,15 @@ export default function VideoRecorderScreen() {
       await allowRotation();
 
       if (result?.uri) {
+        const finalDuration =
+          typeof result?.durationMillis === "number"
+            ? Math.round(result.durationMillis / 1000)
+            : secondsRef.current;
         navigation.navigate("Create", {
           screen: "CreateHome",
           params: {
             recordedVideoUri: result.uri,
-            recordedDuration: seconds,
+            recordedDuration: finalDuration,
             recordedOrientation: clipOrientation,
           },
         });

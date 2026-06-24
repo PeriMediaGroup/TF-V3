@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../auth/AuthContext";
 import { useTheme } from "../styles/ThemeContext";
 import supabase from "../supabase/client";
+import ScreenHeader from "../components/common/ScreenHeader";
 import { useNavigation } from "@react-navigation/native";
 
 const PAGE_SIZE = 20;
@@ -188,13 +188,7 @@ export default function NotificationsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { borderBottomColor: theme.border }]}> 
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerIcon}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Notifications</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <ScreenHeader title="Notifications" onBack={() => navigation.goBack()} />
       <View style={styles.toolbar}>
         <TouchableOpacity onPress={() => setUnreadOnly((v) => !v)} style={[styles.pill, unreadOnly && { backgroundColor: theme.primary }]}>
           <Text style={[styles.pillText, unreadOnly && { color: theme.background }]}>Unread only</Text>
@@ -242,10 +236,6 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  headerIcon: { padding: 4 },
-  headerTitle: { fontSize: 18, fontWeight: "700" },
-  headerSpacer: { width: 24 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   toolbar: { flexDirection: "row", justifyContent: "flex-end", padding: 12, gap: 8 },
   pill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: "#333" },
@@ -256,3 +246,5 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 12, marginTop: 2 },
   unreadDot: { fontSize: 24, lineHeight: 24 },
 });
+
+

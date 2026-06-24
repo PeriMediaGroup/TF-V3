@@ -1,6 +1,15 @@
 import { Alert } from "react-native";
 import supabase from "./client";
 
+const invokeModerationAction = async (payload) => {
+  const { data, error } = await supabase.functions.invoke("moderate-delete", {
+    body: payload,
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+};
+
 export const getRankFromPostCount = (count = 0) => {
   if (count >= 50) return "Veteran";
   if (count >= 25) return "Sharpshooter";
@@ -118,19 +127,46 @@ export const fetchProfileStats = async (userId) => {
       throw postsRes.error;
     }
 
-    const friendsRes = await supabase
+    const postCount = postsRes.count || 0;
+    let friendCount = 0;
+
+    const { data: friendsData, error: friendsError } = await supabase
       .from("friends")
-      .select("user_id", { count: "exact", head: true })
+      .select("user_id, friend_id, status")
       .eq("status", "accepted")
       .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
-    if (friendsRes.error) {
-      console.error("fetchProfileStats friends error:", friendsRes.error);
-      throw friendsRes.error;
+    if (friendsError) {
+      console.error("fetchProfileStats friends error:", friendsError);
+      throw friendsError;
     }
 
-    const postCount = postsRes.count || 0;
-    const friendCount = friendsRes.count || 0;
+    if (Array.isArray(friendsData) && friendsData.length > 0) {
+      const friendIds = new Set();
+      for (const entry of friendsData) {
+        if (!entry || entry.status !== "accepted") continue;
+        const { user_id: uid, friend_id: fid } = entry;
+        const otherId = uid === userId ? fid : uid;
+        if (otherId) {
+          friendIds.add(otherId);
+        }
+      }
+
+      if (friendIds.size > 0) {
+        const { data: activeProfiles, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id")
+          .in("id", Array.from(friendIds))
+          .eq("is_deleted", false);
+
+        if (profilesError) {
+          console.error("fetchProfileStats profile filter error:", profilesError);
+          friendCount = friendIds.size;
+        } else {
+          friendCount = Array.isArray(activeProfiles) ? activeProfiles.length : 0;
+        }
+      }
+    }
 
     return {
       postCount,
@@ -340,10 +376,24 @@ export const recordPostDeletion = async ({ postId, deletedBy, userId, title, des
   }
 };
 
+export const deletePostModeration = async ({ postId, reason = null, reportId = null }) => {
+  try {
+    const { noticeSent } = await invokeModerationAction({
+      action: "delete_post",
+      postId,
+      reason,
+      reportId,
+    });
+    return { success: true, noticeSent: !!noticeSent };
+  } catch (e) {
+    console.error('deletePostModeration:', e.message);
+    return { success: false, error: e.message };
+  }
+};
+
 export const resolveReport = async (reportId) => {
   try {
-    const { error } = await supabase.from('reports').delete().eq('id', reportId);
-    if (error) throw error;
+    await invokeModerationAction({ action: "resolve_report", reportId });
     return { success: true };
   } catch (e) {
     console.error('resolveReport:', e.message);
@@ -351,20 +401,15 @@ export const resolveReport = async (reportId) => {
   }
 };
 
-export const moderateDeleteComment = async ({ commentId, postId, deletedBy, userId, reason }) => {
+export const moderateDeleteComment = async ({ commentId, postId, deletedBy, userId, reason, reportId = null }) => {
   try {
-    // log to reports
-    const { error: insErr } = await supabase.from('reports').insert([
-      { reported_by: deletedBy, post_id: postId ?? null, comment_id: commentId, reason },
-    ]);
-    if (insErr) throw insErr;
-
-    // delete comment
-    const { error: delErr } = await supabase.from('comments').delete().eq('id', commentId);
-    if (delErr) throw delErr;
-
-    // notify user
-    await sendModerationNotice({ userId, postId, commentId, reason });
+    await invokeModerationAction({
+      action: "delete_comment",
+      commentId,
+      postId,
+      reason,
+      reportId,
+    });
     return { success: true };
   } catch (e) {
     console.error('moderateDeleteComment:', e.message);

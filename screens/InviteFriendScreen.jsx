@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Alert,
-  Button,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,6 +12,8 @@ import {
 import { useTheme } from "../styles/ThemeContext";
 import { useAuth } from "../auth/AuthContext";
 import supabase from "../supabase/client";
+import ScreenHeader from "../components/common/ScreenHeader";
+import TfButton from "../components/common/TfButton";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -59,7 +60,7 @@ export default function InviteFriendScreen() {
       console.error("Invite error", err);
       Alert.alert(
         "Unable to Send",
-        err?.message || "We couldn't send that invite right now. Try again shortly."
+        err?.message || "We could not send that invite right now. Try again shortly."
       );
     } finally {
       setLoading(false);
@@ -78,11 +79,12 @@ export default function InviteFriendScreen() {
         ]}
         keyboardShouldPersistTaps="handled"
       >
+        <ScreenHeader title="Invite a Friend" />
         <Text style={[styles.title, { color: theme.text }]}>
           Invite a Friend
         </Text>
         <Text style={[styles.subtitle, { color: theme.textMuted || "#888" }]}>
-          Share Triggerfeed with someone you know. We'll send them an email with
+          Share Triggerfeed with someone you know. We will send them an email with
           your invite link.
         </Text>
 
@@ -130,10 +132,12 @@ export default function InviteFriendScreen() {
           />
         </View>
 
-        <Button
-          title={loading ? "Sending…" : "Send Invite"}
+        <TfButton
+          label={loading ? "Sending..." : "Send Invite"}
           onPress={handleSubmit}
           disabled={loading}
+          loading={loading}
+          style={styles.submitButton}
         />
       </ScrollView>
     </KeyboardAvoidingView>
@@ -179,4 +183,8 @@ const styles = StyleSheet.create({
     minHeight: 120,
     fontSize: 16,
   },
+  submitButton: {
+    marginTop: 12,
+  },
 });
+

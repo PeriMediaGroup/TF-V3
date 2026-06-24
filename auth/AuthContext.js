@@ -50,8 +50,8 @@ export const AuthProvider = ({ children }) => {
     restoreSession();
   }, []);
 
-  const handleAuthStateChange = () => {
-    supabase.auth.onAuthStateChange((_event, session) => {
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUser(session.user);
         saveSession(session);
@@ -60,10 +60,11 @@ export const AuthProvider = ({ children }) => {
         saveSession(null);
       }
     });
-  };
 
-  useEffect(() => {
-    handleAuthStateChange();
+    return () => {
+      authListener?.subscription?.unsubscribe?.();
+      authListener?.unsubscribe?.();
+    };
   }, []);
 
   // Load profile when user changes

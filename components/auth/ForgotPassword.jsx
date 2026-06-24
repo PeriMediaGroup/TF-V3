@@ -11,7 +11,7 @@ import {
 import supabase from "../../supabase/client";
 import { Colors } from "../../styles/GlobalStyles";
 
-const REDIRECT_URL = "https://triggerfeed.com/reset";
+const REDIRECT_URL = "https://app.triggerfeed.com/reset-password";
 
 export default function ForgotPassword({ initialEmail = "", onClose }) {
   const [email, setEmail] = useState(initialEmail);

@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from '../styles/ThemeContext';
 import supabase from '../supabase/client';
+import ScreenHeader from '../components/common/ScreenHeader';
 import ReasonModal from '../components/common/ReasonModal';
-import { recordPostDeletion, sendModerationNotice, resolveReport, moderateDeleteComment } from '../supabase/helpers';
+import { deletePostModeration, resolveReport, moderateDeleteComment } from '../supabase/helpers';
 
 export default function AdminDashboardScreen({ navigation }) {
   const { user, isElevated, loading: authLoading } = useAuth();
@@ -63,32 +63,12 @@ export default function AdminDashboardScreen({ navigation }) {
 
   const handleDeletePostFromReport = async (report, reasonText) => {
     try {
-      // fetch post to get owner + metadata
-      const { data: post, error } = await supabase
-        .from('posts')
-        .select('id, user_id, title, description')
-        .eq('id', report.post_id)
-        .maybeSingle();
-      if (error) throw error;
-      if (!post) throw new Error('Post not found');
-      // Remove any previous audit rows to avoid FK blocks
-      try { await supabase.from('post_deletions').delete().eq('post_id', post.id); } catch {}
-      // delete first to avoid FK restriction
-      const { error: delErr } = await supabase.from('posts').delete().eq('id', post.id);
-      if (delErr) throw delErr;
-      await sendModerationNotice({ userId: post.user_id, postId: post.id, reason: reasonText });
-      // record audit entry (supports 'reason' or fallback 'reson')
-      try {
-        await recordPostDeletion({
-          postId: post.id,
-          deletedBy: user.id,
-          userId: post.user_id,
-          title: post.title,
-          description: post.description,
-          reason: reasonText,
-        });
-      } catch (e) { console.warn('recordPostDeletion failed:', e.message); }
-      await resolveReport(report.id);
+      const result = await deletePostModeration({
+        postId: report.post_id,
+        reportId: report.id,
+        reason: reasonText,
+      });
+      if (!result?.success) throw new Error(result?.error || 'Delete failed');
       loadReports();
     } catch (e) {
       console.error('Delete post from report:', e.message);
@@ -111,8 +91,8 @@ export default function AdminDashboardScreen({ navigation }) {
         deletedBy: user.id,
         userId: comment.user_id,
         reason: reasonText,
+        reportId: report.id,
       });
-      await resolveReport(report.id);
       loadReports();
     } catch (e) {
       console.error('Delete comment from report:', e.message);
@@ -160,14 +140,7 @@ export default function AdminDashboardScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Back">
-          <Ionicons name="arrow-back" size={22} color={theme.text} />
-          <Text style={[styles.headerText, { color: theme.text }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Reports</Text>
-        <View style={{ width: 60 }} />
-      </View>
+      <ScreenHeader title="Admin Dashboard" onBack={() => navigation.goBack()} />
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.primary} /></View>
       ) : (
@@ -191,10 +164,6 @@ export default function AdminDashboardScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { height: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 },
-  headerText: { marginLeft: 6, fontWeight: '700' },
-  headerTitle: { fontSize: 16, fontWeight: '700' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', width: 60 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   card: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 12 },
   title: { fontSize: 16, fontWeight: '700' },
